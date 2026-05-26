@@ -53,8 +53,9 @@ pip install -r requirements.txt
 
 Create a `.env` file:
 
-- OPENROUTER_API_KEY=your_key,
+- OPENROUTER_API_KEY=your_key
 - NVIDIA_API_KEY=your_key
+- DB_URL=postgresql://usename:password@localhost:port/chatbot_memory"
 
 ### Database setup
 
