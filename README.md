@@ -53,8 +53,8 @@ pip install -r requirements.txt
 
 Create a `.env` file:
 
-OPENROUTER_API_KEY=your_key
-NVIDIA_API_KEY=your_key
+- OPENROUTER_API_KEY=your_key,
+- NVIDIA_API_KEY=your_key
 
 ### Database setup
 
