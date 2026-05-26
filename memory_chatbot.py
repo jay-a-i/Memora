@@ -21,7 +21,7 @@ embedder = NVIDIAEmbeddings(
   truncate="NONE", 
 )
 
-conn = psycopg.connect("postgresql://postgres:1234@localhost:5432/chatbot_memory")
+conn = psycopg.connect(os.getenv("DB_URL"))
 
 def user_info(conn, username):
     with conn.cursor() as cur:
