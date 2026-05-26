@@ -105,3 +105,4 @@ The hybrid retrieval approach is also not something you see in most beginner pro
 ## Author
 
 Built as part of a self-directed learning journey through AI engineering — from basic LangChain chains to production-grade memory systems.
+It works in teminal only as this was just a Practice project.
