@@ -1,13 +1,21 @@
 import os
 import psycopg
+from pydantic import BaseModel
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_openai import ChatOpenAI
 from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
 from langchain_core.messages import AIMessage, HumanMessage
 
 load_dotenv()
+app = FastAPI()
 
-username = input("Please Enter Your Username:  ")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"]
+)
 
 llm = ChatOpenAI(
     model="openai/gpt-oss-120b:free",
@@ -21,9 +29,12 @@ embedder = NVIDIAEmbeddings(
   truncate="NONE", 
 )
 
-conn = psycopg.connect("postgresql://postgres:1234@localhost:5432/chatbot_memory")
+conn = psycopg.connect(os.getenv("CBDB_URL"))
 
 def user_info(conn, username):
+
+    username = username.lower().strip()
+
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE username = %s", (username,))
         user = cur.fetchone()
@@ -34,6 +45,7 @@ def user_info(conn, username):
         cur.execute("INSERT INTO users (username) VALUES (%s) RETURNING id", (username,))
         conn.commit()
         return cur.fetchone()[0]
+
 
 def get_or_create_session(conn, user_id):
     with conn.cursor() as cur:
@@ -59,23 +71,27 @@ def save_msg(conn, session_id, role, content, embedding, tokens=None):
                     (session_id, role, content, embedding, tokens))
         conn.commit()
 
-def fetch_hybrid_memory(conn, session_id, query_embedding, recent_limit=10, semantic_limit=5):
+def fetch_hybrid_memory(conn, user_id, query_embedding, recent_limit=10, semantic_limit=5):
     with conn.cursor() as cur:
+   
         cur.execute(
-            """SELECT role, content FROM messages 
-               WHERE session_id = %s 
-               ORDER BY created_at DESC 
+            """SELECT m.role, m.content FROM messages m
+               JOIN sessions s ON m.session_id = s.id
+               WHERE s.user_id = %s 
+               ORDER BY m.created_at DESC 
                LIMIT %s""",
-            (session_id, recent_limit)
+            (user_id, recent_limit)
         )
         recent = cur.fetchall()[::-1]
         
+       
         cur.execute(
-            """SELECT role, content FROM messages
-               WHERE session_id = %s
-               ORDER BY embedding <=> %s::vector
+            """SELECT m.role, m.content FROM messages m
+               JOIN sessions s ON m.session_id = s.id
+               WHERE s.user_id = %s
+               ORDER BY m.embedding <=> %s::vector
                LIMIT %s""",
-            (session_id, query_embedding, semantic_limit)
+            (user_id, query_embedding, semantic_limit)
         )
         semantic = cur.fetchall()
     
@@ -96,8 +112,46 @@ def rows_to_messages(rows):
             messages.append(AIMessage(content=content))
     return messages
 
-def chat(conn, username=username):
+
+class ChatRequest(BaseModel):
+    username : str
+    message : str
+
+class ChatResponse(BaseModel):
+    response : str
+    session_id : int
+
+@app.get('/')
+async def root():
+    return {"message": "Memora API is running"}
+
+@app.post('/chat')
+async def Web_chat(request: ChatRequest):
+
+    try:
+        user_id = user_info(conn, request.username)
+        session_id = get_or_create_session(conn, user_id)
+
+        query_embedding = embedder.embed_query(request.message)
+        memory_rows = fetch_hybrid_memory(conn, user_id, query_embedding)        
+        chat_history = rows_to_messages(memory_rows)
+  
+        messages = chat_history + [HumanMessage(content=request.message)]
+        response = llm.invoke(messages)
+        
+        save_msg(conn, session_id, "human", request.message, query_embedding)
+        response_embedding = embedder.embed_query(response.content)
+        save_msg(conn, session_id, "ai", response.content, response_embedding)
+
+        return ChatResponse(response=response.content, session_id=session_id)
     
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+#-------------------------------------------------------------------------------------------------------------
+
+def run_cli_chat():
+    username = input("Please Enter Your Username: ")
     user_id = user_info(conn, username)
     session_id = get_or_create_session(conn, user_id)
     
@@ -107,7 +161,6 @@ def chat(conn, username=username):
             break
 
         query_embedding = embedder.embed_query(user_input)
-        
         memory_rows = fetch_hybrid_memory(conn, session_id, query_embedding)
         chat_history = rows_to_messages(memory_rows)
         
@@ -118,7 +171,12 @@ def chat(conn, username=username):
         response_embedding = embedder.embed_query(response.content)
         save_msg(conn, session_id, "ai", response.content, response_embedding)
         
-        print(f"AI: {response.content}")
+        print(f"Memora: {response.content}\n\n\nSession ID: {session_id}")
 
+# This ensures CLI chat ONLY runs if you execute the file directly, 
+# preventing Uvicorn from crashing.
 if __name__ == "__main__":
-    chat(conn)
+    u = input("Do you want to run Memora in CLI? (Yes/No):   ")
+    if u.strip().lower() == "yes":
+        run_cli_chat()
+    else: print("Have a nice day!")
