@@ -8,17 +8,16 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-def chat_api(username: str, message: str):
+def chat_api_stream(username: str, message: str):
     try:
         response = requests.post(
-            url="http://localhost:8000/chat",
-            json={"username": username, "message": message}
+            url="http://localhost:8000/chat/stream",
+            json={"username": username, "message": message},
+            stream=True 
         )
-        data = response.json()
-        return data["response"], data["session_id"]
+        return response
     except Exception as e:
         return f"Oops! An error occurred: {e}", None
-
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -46,9 +45,7 @@ if not st.session_state.logged_in:
         else:
             st.error("Please enter a username")
 
-
 else:
-    
     with st.sidebar:
         st.title("Memora")
         st.divider()
@@ -66,25 +63,22 @@ else:
     st.title(f"Hey {st.session_state.username.capitalize()}!")
     st.divider()
 
-  
+
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
-
-  
+    
     if prompt := st.chat_input("Type a message..."):
-        
         st.session_state.messages.append({"role": "user", "content": prompt})
+
         with st.chat_message("user"):
             st.write(prompt)
 
-        
-        with st.spinner("Thinking..."):
-            response, session_id = chat_api(st.session_state.username, prompt)
-
-        if session_id:
-            st.session_state.session_id = session_id
-
-        st.session_state.messages.append({"role": "assistant", "content": response})
         with st.chat_message("assistant"):
-            st.write(response)
+            response = chat_api_stream(st.session_state.username, prompt)
+            
+            if response:
+                full_response = st.write_stream(response.iter_content(chunk_size=None, decode_unicode=True))
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+            else:
+                st.error("Connection error")

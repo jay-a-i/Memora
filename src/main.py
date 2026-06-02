@@ -1,12 +1,14 @@
 import os
 import psycopg
+from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_openai import ChatOpenAI
 from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 load_dotenv()
 app = FastAPI()
@@ -21,6 +23,15 @@ llm = ChatOpenAI(
     model="openai/gpt-oss-120b:free",
     api_key=os.getenv("OPENROUTER_API_KEY"), 
     base_url="https://openrouter.ai/api/v1",
+    streaming=True
+)
+
+sm = SystemMessage(
+    content="""
+    You are Memora, a personal AI assistant.
+    Use memory when relevant.
+    Don't invent memories.
+    """
 )
 
 embedder = NVIDIAEmbeddings(
@@ -29,7 +40,7 @@ embedder = NVIDIAEmbeddings(
   truncate="NONE", 
 )
 
-conn = psycopg.connect(os.getenv("CBDB_URL"))
+pool = ConnectionPool(os.getenv("CBDB_URL"), min_size=5, max_size=10)
 
 def user_info(conn, username):
 
@@ -83,8 +94,7 @@ def fetch_hybrid_memory(conn, user_id, query_embedding, recent_limit=10, semanti
             (user_id, recent_limit)
         )
         recent = cur.fetchall()[::-1]
-        
-       
+    
         cur.execute(
             """SELECT m.role, m.content FROM messages m
                JOIN sessions s ON m.session_id = s.id
@@ -112,7 +122,6 @@ def rows_to_messages(rows):
             messages.append(AIMessage(content=content))
     return messages
 
-
 class ChatRequest(BaseModel):
     username : str
     message : str
@@ -125,25 +134,29 @@ class ChatResponse(BaseModel):
 async def root():
     return {"message": "Memora API is running"}
 
-@app.post('/chat')
-async def Web_chat(request: ChatRequest):
-
+@app.post('/chat/stream')
+async def stream_chat(request: ChatRequest):
     try:
-        user_id = user_info(conn, request.username)
-        session_id = get_or_create_session(conn, user_id)
+        with pool.connection() as pconn:
+            user_id = user_info(pconn, request.username)
+            session_id = get_or_create_session(pconn, user_id)
+            query_embedding = embedder.embed_query(request.message)
+            memory_rows = fetch_hybrid_memory(pconn, user_id, query_embedding)
+            chat_history = rows_to_messages(memory_rows)
+            messages = [sm] +  chat_history + [HumanMessage(content=request.message)]
 
-        query_embedding = embedder.embed_query(request.message)
-        memory_rows = fetch_hybrid_memory(conn, user_id, query_embedding)        
-        chat_history = rows_to_messages(memory_rows)
-  
-        messages = chat_history + [HumanMessage(content=request.message)]
-        response = llm.invoke(messages)
-        
-        save_msg(conn, session_id, "human", request.message, query_embedding)
-        response_embedding = embedder.embed_query(response.content)
-        save_msg(conn, session_id, "ai", response.content, response_embedding)
+            def generate():
+                full_response = ""
+                for chunk in llm.stream(messages):
+                    content = chunk.content
+                    if content:
+                        full_response += content
+                        yield content
+                
+                save_msg(pconn, session_id, "human", request.message, query_embedding)
+                response_embedding = embedder.embed_query(full_response)
+                save_msg(pconn, session_id, "ai", full_response, response_embedding)
 
-        return ChatResponse(response=response.content, session_id=session_id)
-    
+            return StreamingResponse(generate(), media_type="text/plain")  
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
