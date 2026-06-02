@@ -1,5 +1,4 @@
 import os
-import psycopg
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 from dotenv import load_dotenv
