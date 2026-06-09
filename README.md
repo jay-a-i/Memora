@@ -14,6 +14,13 @@ There are two layers:
 
 Both layers are combined and deduplicated before being sent to the LLM. So if you told the bot your favorite color three weeks and 500 messages ago, it still knows — as long as your question is related enough to surface it.
 
+## Document Knowledge (RAG)
+
+Upload PDFs via the sidebar and Memora will answer questions 
+from them alongside your conversation memory. Documents are 
+chunked, embedded, and stored in PostgreSQL with pgvector — 
+retrieved using the same semantic search as conversation memory.
+
 ## Tech stack
 
 - **LangChain** — LLM orchestration
