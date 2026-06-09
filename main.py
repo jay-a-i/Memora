@@ -203,6 +203,10 @@ class DocumentResponse(BaseModel):
 async def root():
     return {"message": "Memora API is running"}
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 @app.post("/sessions")
 def create_new_session(request: SessionRequest):
     with pool.connection() as conn:
