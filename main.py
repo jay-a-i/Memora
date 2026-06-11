@@ -23,8 +23,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:8501",
-        "https://memora-x58g.onrender.com"],                                                 
-    allow_methods=["*"]
+        "https://*.streamlit.app"],                                                
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 llm = ChatOpenAI(

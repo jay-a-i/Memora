@@ -8,9 +8,11 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
+API_URL = "https://memora-tmek.onrender.com"
+
 def chat_api_stream(session_id, message):
     response = requests.post(
-        "http://localhost:8000/chat/stream",
+        f"{API_URL}/chat/stream",
         json={
             "session_id": session_id,
             "message": message
@@ -20,25 +22,25 @@ def chat_api_stream(session_id, message):
 
 def create_session_api(username):
     response = requests.post(
-        "http://localhost:8000/sessions",
+        f"{API_URL}/sessions",
         json={"username": username})
     return response.json()
 
 def get_sessions_api(username):
     response = requests.get(
-    f"http://localhost:8000/users/{username}/sessions")
+    f"{API_URL}/users/{username}/sessions")
     return response.json()
 
 def load_messages_api(session_id):
     response = requests.get(
-        f"http://localhost:8000/sessions/{session_id}/messages"
+        f"{API_URL}/sessions/{session_id}/messages"
     )
     return response.json()
 
 def upload_document_api(username, file):
     try:
         response = requests.post(
-            "http://localhost:8000/documents/upload",
+            f"{API_URL}/documents/upload",
             data={"username": username},
             files={"file": (file.name, file, "application/pdf")}
         )
@@ -51,12 +53,12 @@ def upload_document_api(username, file):
     
 def get_documents_api(username):
     response = requests.get(
-        f"http://localhost:8000/documents/{username}")
+        f"{API_URL}/documents/{username}")
     return response.json()
 
 def delete_document_api(document_id):
     response = requests.delete(
-        f"http://localhost:8000/documents/{document_id}")
+        f"{API_URL}/documents/{document_id}")
     return response.json()
 
 if "logged_in" not in st.session_state:
