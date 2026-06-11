@@ -20,7 +20,10 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8501"],                                                 
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8501",
+        "https://memora-x58g.onrender.com"],                                                 
     allow_methods=["*"]
 )
 
