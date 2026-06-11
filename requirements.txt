@@ -11,3 +11,4 @@ langchain-community
 langchain-nvidia-ai-endpoints
 langchain-text-splitters
 pypdf
+python-multipart
