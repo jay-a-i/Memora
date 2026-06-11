@@ -12,3 +12,5 @@ python-dotenv==1.2.2
 requests==2.33.1
 requests-toolbelt==1.0.0
 uvicorn==0.48.0
+psycopg==3.3.4
+psycopg-binary==3.3.4
