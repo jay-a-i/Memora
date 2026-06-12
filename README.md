@@ -219,9 +219,9 @@ pip install -r requirements.txt
 ### Environment variables
 
 ```env
-OPENROUTER_API_KEY=
-NVIDIA_API_KEY=
-CBDB_URL=
+OPENROUTER_API_KEY= Your Openrouter api key
+NVIDIA_API_KEY= Your Nvidia api key
+CBDB_URL= Your SQL database Url (or neon)
 ```
 
 ### Run backend
