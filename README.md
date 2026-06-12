@@ -1,115 +1,225 @@
-# Memora — A Chatbot That Actually Remembers You
+# Memora
 
-Most chatbots forget everything the moment you close the tab. Memora doesn't.
+A Retrieval-Augmented Generation (RAG) assistant with hybrid conversational memory.
 
-Built with LangChain and PostgreSQL, Memora stores every conversation in a real database and uses semantic search to recall relevant memories — even from weeks ago. It's not just remembering the last few messages, it's understanding which past conversations are actually relevant to what you're asking right now.
+Memora combines document retrieval and long-running chat memory to create an AI assistant that can answer questions from uploaded PDFs while maintaining context across conversations.
 
-## How the memory works
+---
 
-There are two layers:
+## Features
 
-**Recent memory** grabs your last 10 messages chronologically — the immediate context of your conversation.
+### Retrieval-Augmented Generation (RAG)
 
-**Semantic memory** searches your entire conversation history using vector embeddings and finds the 5 most relevant past messages based on meaning, not just recency.
+Upload PDFs and chat with them.
 
-Both layers are combined and deduplicated before being sent to the LLM. So if you told the bot your favorite color three weeks and 500 messages ago, it still knows — as long as your question is related enough to surface it.
+Memora:
 
-## Document Knowledge (RAG)
+* extracts text from PDFs
+* chunks documents using recursive text splitting
+* generates embeddings with NVIDIA nv-embed-v1
+* stores chunks in PostgreSQL + pgvector
+* retrieves semantically relevant passages
+* injects retrieved context into the prompt
 
-Upload PDFs via the sidebar and Memora will answer questions 
-from them alongside your conversation memory. Documents are 
-chunked, embedded, and stored in PostgreSQL with pgvector — 
-retrieved using the same semantic search as conversation memory.
+If information is not found inside the retrieved context, the assistant avoids hallucinating and states that it could not find the answer.
 
-## Tech stack
+---
 
-- **LangChain** — LLM orchestration
-- **PostgreSQL + pgvector** — persistent storage and vector similarity search
-- **NVIDIA nv-embed-v1** — text embeddings (4096 dimensions)
-- **OpenRouter** — LLM API access
-- **psycopg3** — PostgreSQL connection
+### Hybrid Memory
 
-## Database schema
+Memora uses two memory layers:
 
-Three tables — users, sessions, and messages. Messages store both the raw text and a 4096-dimensional embedding vector. This lets you query by recency (SQL ORDER BY) and by semantic relevance (pgvector cosine similarity) at the same time.
+#### Recent Memory
 
-```sql
-SELECT role, content FROM messages
-WHERE session_id = %s
-ORDER BY embedding <=> %s::vector
-LIMIT 5;
+Maintains the latest conversation context by retrieving the most recent messages.
+
+#### Semantic Memory
+
+Searches past conversations using vector similarity to find relevant memories based on meaning rather than recency.
+
+Both are merged and deduplicated before being sent to the model.
+
+---
+
+### Multi-Session Chats
+
+Users can:
+
+* create multiple conversations
+* switch between chats
+* reload previous sessions
+* preserve chat history
+
+---
+
+### Document Library
+
+Documents can be:
+
+* uploaded
+* listed
+* deleted
+
+Uploaded PDFs are automatically processed and indexed.
+
+---
+
+## Architecture
+
+```text
+User
+ ↓
+Streamlit UI
+ ↓
+FastAPI
+ ↓
+Hybrid Retrieval
+ ├── Conversation Memory
+ └── Document Retrieval
+ ↓
+OpenRouter LLM
+ ↓
+Streaming Response
 ```
 
-## Setup
+---
 
-### Prerequisites
-- Python 3.11+
-- PostgreSQL with pgvector extension
-- NVIDIA API key (for embeddings)
-- OpenRouter API key (for LLM)
+## Tech Stack
 
-### Installation
+### Backend
+
+* FastAPI
+* LangChain
+* psycopg3
+* PostgreSQL
+* pgvector
+
+### Frontend
+
+* Streamlit
+
+### LLM
+
+* OpenRouter
+* gpt-oss-120b
+
+### Embeddings
+
+* NVIDIA nv-embed-v1
+
+---
+
+## Retrieval Pipeline
+
+### Conversation Memory
+
+```
+User Query
+↓
+Embedding
+↓
+Recent Messages
++
+Semantic Memory Search
+↓
+Context Assembly
+```
+
+### Document Retrieval
+
+```
+PDF
+↓
+Chunking
+↓
+Embedding
+↓
+pgvector
+↓
+Similarity Search
+↓
+Relevant Chunks
+↓
+Prompt Injection
+```
+
+---
+
+## Database Structure
+
+### users
+
+Stores user identities.
+
+### sessions
+
+Stores chat sessions.
+
+### messages
+
+Stores conversation history and message embeddings.
+
+### documents
+
+Stores uploaded PDFs.
+
+### document_chunks
+
+Stores chunked document contents and embeddings.
+
+---
+
+## Running Locally
+
+### Install dependencies
 
 ```bash
-git clone https://github.com/jay-a-i/memora.git
-cd memora
 pip install -r requirements.txt
 ```
 
 ### Environment variables
 
-Create a `.env` file:
-
-- OPENROUTER_API_KEY=your_key
-- NVIDIA_API_KEY=your_key
-- CBDB_URL=postgresql://usename:password@localhost:port/chatbot_memory
-
-### Database setup
-
-```sql
-CREATE DATABASE chatbot_memory;
-\c chatbot_memory
-CREATE EXTENSION vector;
-
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE sessions (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id),
-    title TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE messages (
-    id SERIAL PRIMARY KEY,
-    session_id INTEGER REFERENCES sessions(id),
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    embedding vector(4096),
-    tokens_used INTEGER,
-    created_at TIMESTAMP DEFAULT NOW()
-);
+```env
+OPENROUTER_API_KEY=
+NVIDIA_API_KEY=
+CBDB_URL=
 ```
 
-### Run
+### Run backend
 
 ```bash
-python memory_chatbot.py
+uvicorn main:app --reload
 ```
 
-Enter your username when prompted. If you've used the app before, it picks up your last session automatically.
+### Run frontend
 
-## What makes this different from a regular chatbot
+```bash
+streamlit run app.py
+```
 
-Most tutorial chatbots store messages in a Python list that disappears on exit. Some use LangChain's built-in memory classes which are fine for prototyping but not designed to scale. This project skips all of that and goes straight to a proper database-backed implementation with a custom schema — closer to how a production system would actually be built.
+---
 
-The hybrid retrieval approach is also not something you see in most beginner projects. Pure recency-based memory breaks down in long conversations. Pure semantic memory misses recent context. Combining both gives you something that actually feels intelligent.
+## Future Improvements
 
-## Author
+* automatic session titles
+* long-term memory profiles
+* conversation summaries
+* Redis caching
+* authentication
+* Docker deployment
+* LangGraph agents
 
-Built as part of a self-directed learning journey through AI engineering — from basic LangChain chains to production-grade memory systems.
-It works in teminal only as this was just a Practice project.
+---
+
+## Motivation
+
+Most tutorial chatbots only remember the last few messages.
+
+Memora goes further by combining:
+
+* hybrid conversational memory
+* semantic retrieval
+* persistent storage
+* document-based RAG
+
+to provide an assistant that can reason over both previous conversations and external knowledge.
