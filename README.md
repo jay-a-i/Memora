@@ -83,7 +83,7 @@ Streaming Response
 ```
 
 ---
-```
+
 
 ## Tech stack
 
@@ -201,6 +201,7 @@ CREATE TABLE document_chunks (
     page_number INTEGER,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
 ```
 
 ---
