@@ -76,7 +76,7 @@ if "documents" not in st.session_state:
 
 if not st.session_state.logged_in:
     st.title("Memora")
-    st.markdown("#### A  Personal Retrieval-Augmented Generation (RAG) assistant.")
+    st.markdown("#### Your Personal Retrieval-Augmented Generation (RAG) based AI assistant.")
     st.divider()
 
     username = st.text_input("Username", placeholder="Enter your username")
