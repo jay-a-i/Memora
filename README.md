@@ -83,29 +83,20 @@ Streaming Response
 ```
 
 ---
+```
 
-## Tech Stack
+## Tech stack
 
-### Backend
-
-* FastAPI
-* LangChain
-* psycopg3
-* PostgreSQL
-* pgvector
-
-### Frontend
-
-* Streamlit
-
-### LLM
-
-* OpenRouter
-* gpt-oss-120b
-
-### Embeddings
-
-* NVIDIA nv-embed-v1
+- **FastAPI** — async REST backend with streaming support
+- **Streamlit** — frontend chat interface
+- **LangChain** — LLM orchestration
+- **PostgreSQL + pgvector** — persistent storage and vector similarity search
+- **NVIDIA nv-embed-v1** — text embeddings (4096 dimensions)
+- **OpenRouter** — LLM API access
+- **psycopg3 + connection pooling** — efficient database connections
+- **Neon** — hosted PostgreSQL with pgvector
+- **Render** — backend deployment
+- **Streamlit Cloud** — frontend deployment
 
 ---
 
@@ -167,6 +158,51 @@ Stores uploaded PDFs.
 
 Stores chunked document contents and embeddings.
 
+## Database schema
+
+Five tables — users, sessions, messages, documents, and document_chunks. Messages and document chunks both store 4096-dimensional embedding vectors, which allows unified semantic search across conversation history and uploaded documents.
+
+```sql
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE sessions (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    title TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE messages (
+    id SERIAL PRIMARY KEY,
+    session_id INTEGER REFERENCES sessions(id),
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector(4096),
+    tokens_used INTEGER,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE documents (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    filename TEXT NOT NULL,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE document_chunks (
+    id SERIAL PRIMARY KEY,
+    document_id INTEGER REFERENCES documents(id),
+    content TEXT NOT NULL,
+    embedding vector(4096),
+    page_number INTEGER,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
 ---
 
 ## Running Locally
@@ -174,6 +210,8 @@ Stores chunked document contents and embeddings.
 ### Install dependencies
 
 ```bash
+git clone https://github.com/jay-a-i/Memora.git
+cd Memora
 pip install -r requirements.txt
 ```
 
