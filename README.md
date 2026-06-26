@@ -4,7 +4,7 @@ A Retrieval-Augmented Generation (RAG) assistant with hybrid conversational memo
 
 Memora combines document retrieval and long-running chat memory to create an AI assistant that can answer questions from uploaded PDFs while maintaining context across conversations.
 
-[Visit Live Website](memora-j.streamlit.app)
+[Visit Live Website](https://memora-j.streamlit.app/)
 ---
 
 ## Features
