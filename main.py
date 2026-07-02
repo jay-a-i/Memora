@@ -53,7 +53,7 @@ sm = SystemMessage(
     """
 )
 
-pool = ConnectionPool(os.getenv("LOCAL_CBDB_URL"), min_size=5, max_size=10)
+pool = ConnectionPool(os.getenv("DB_URL"), min_size=5, max_size=10)
 
 #DataBase Blocks:-
 def register_user(conn, username, name, email, hashed_password):
