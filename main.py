@@ -53,7 +53,7 @@ sm = SystemMessage(
     """
 )
 
-pool = ConnectionPool(os.getenv("DB_URL"), min_size=5, max_size=10)
+pool = ConnectionPool(os.getenv("LOCAL_CBDB_URL"), min_size=5, max_size=10)
 
 #DataBase Blocks:-
 def register_user(conn, username, name, email, hashed_password):
@@ -83,17 +83,17 @@ def register_user(conn, username, name, email, hashed_password):
 
 def load_credentials_from_db(conn):
     with conn.cursor() as cur:
+        #   Index positions:  0          1          2      3
         cur.execute("SELECT username, full_name, email, password_hash FROM users;")
         rows = cur.fetchall()
         
     credentials = {}
     for row in rows:
-        if row[3] is not None:
-            credentials[row[0]] = {
-                "name": row[1],
-                "email": row[2],
-                "password": row[3]
-            }
+        credentials[row[0]] = {
+            "name": row[1],
+            "email": row[2],
+            "password": row[3]
+        }
     return credentials            
 
 def user_info(conn, username):
