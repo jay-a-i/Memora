@@ -1,3 +1,4 @@
+#Imports
 import os
 import tempfile
 from psycopg_pool import ConnectionPool
@@ -23,7 +24,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:8501",
-        "https://memora-j.streamlit.app/"],                                                
+        "https://memora-j.streamlit.app/"
+        ],                                                
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -51,11 +53,50 @@ sm = SystemMessage(
     """
 )
 
-pool = ConnectionPool(os.getenv("CBDB_URL"), min_size=5, max_size=10)
+pool = ConnectionPool(os.getenv("LOCAL_CBDB_URL"), min_size=5, max_size=10)
 
 #DataBase Blocks:-
-def user_info(conn, username):
+def register_user(conn, username, name, email, hashed_password):
+    username = username.lower().strip()
+    name = name.lower().strip()
+    email = email.lower().strip()
+    try:
+        with conn.cursor() as cur:
+            try:
+                cur.execute(
+                    "INSERT INTO users (username, full_name, email, password_hash) VALUES (%s, %s, %s, %s);",
+                    (username, name, email, hashed_password)
+                )
+                conn.commit()
+                return {
+                    "Registration Successful": {
+                        "username": username,
+                        "name": name,
+                        "email": email,
+                    }
+                }
+            except Exception as e:
+                conn.rollback()
+                return str(e)
+    except Exception as e:
+        return "Connection Error"
 
+def load_credentials_from_db(conn):
+    with conn.cursor() as cur:
+        #   Index positions:  0          1          2      3
+        cur.execute("SELECT username, full_name, email, password_hash FROM users;")
+        rows = cur.fetchall()
+        
+    credentials = {}
+    for row in rows:
+        credentials[row[0]] = {
+            "name": row[1],
+            "email": row[2],
+            "password": row[3]
+        }
+    return credentials            
+
+def user_info(conn, username):
     username = username.lower().strip()
 
     with conn.cursor() as cur:
@@ -82,7 +123,6 @@ def create_session(conn, user_id, title="Untitled Chat"):
 
         session_id = cur.fetchone()[0]
         conn.commit()
-
         return session_id
 
 def save_msg(conn, session_id, role, content, embedding, tokens=None):
@@ -91,10 +131,8 @@ def save_msg(conn, session_id, role, content, embedding, tokens=None):
                     (session_id, role, content, embedding, tokens))
         conn.commit()
 
-
 def fetch_hybrid_memory(conn, session_id, query_embedding, recent_limit=10, semantic_limit=5):
     with conn.cursor() as cur:
-
         # Recent messages
         cur.execute(
             """
@@ -105,7 +143,6 @@ def fetch_hybrid_memory(conn, session_id, query_embedding, recent_limit=10, sema
             LIMIT %s
             """,
             (session_id, recent_limit))
-
         recent = cur.fetchall()[::-1]
 
         # Semantic retrieval
@@ -123,7 +160,6 @@ def fetch_hybrid_memory(conn, session_id, query_embedding, recent_limit=10, sema
 
         semantic = []
         for role, content, distance in cur.fetchall():
-
             if distance < 0.35:
                 semantic.append(
                     (role, content)
@@ -140,7 +176,7 @@ def fetch_hybrid_memory(conn, session_id, query_embedding, recent_limit=10, sema
 def rows_to_messages(rows):
     messages = []
     for role, content in rows:
-        if role == "human":
+        if role == "user":
             messages.append(HumanMessage(content=content))
         else:
             messages.append(AIMessage(content=content))
@@ -200,7 +236,11 @@ class DocumentResponse(BaseModel):
     document_id: int
     filename: str
     chunks_count: int
-
+class RegisterRequest(BaseModel):
+    username: str
+    name: str
+    email: str
+    password: str
 
 #API Endpoints:-
 @app.get('/')
@@ -210,6 +250,30 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+@app.post("/register_new_user")
+def register_new_user(request: RegisterRequest):
+    try:
+        with pool.connection() as conn:
+            credentials = register_user(
+                conn=conn,
+                username=request.username,
+                name=request.name,
+                email=request.email,
+                hashed_password=request.password
+            )
+        return credentials
+    except Exception as e:
+        return e
+    
+@app.get("/load_credentials")
+def load_credentials():
+    try:
+        with pool.connection() as conn:
+            credentials = load_credentials_from_db(conn)
+            return credentials
+    except Exception as e:
+        return str(e)
 
 @app.post("/sessions")
 def create_new_session(request: SessionRequest):
@@ -267,10 +331,7 @@ def load_messages(session_id: int):
             } for role, content in rows]
 
 @app.post("/documents/upload", response_model=DocumentResponse)
-async def upload_document(
-    username: str = Form(...),
-    file: UploadFile = File(...)
-):
+async def upload_document(username: str = Form(...), file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files supported")
     
@@ -340,7 +401,6 @@ def delete_document(document_id: int):
 
 @app.post("/chat/stream")
 async def stream_chat(request: ChatRequest):
-
     try:
         with pool.connection() as conn:
             query_embedding = embedder.embed_query(request.message)
@@ -375,11 +435,11 @@ async def stream_chat(request: ChatRequest):
                             full_response += chunk.content
                             yield chunk.content
 
-                    save_msg(save_conn, request.session_id, "human", request.message, query_embedding)
+                    save_msg(save_conn, request.session_id, "user", request.message, query_embedding)
                     response_embedding = embedder.embed_query(full_response)
-                    save_msg(save_conn, request.session_id, "ai", full_response, response_embedding)
+                    save_msg(save_conn, request.session_id, "assistant", full_response, response_embedding)
 
             return StreamingResponse(generate(), media_type="text/plain")
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
