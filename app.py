@@ -1,4 +1,4 @@
-import requests, bcrypt #uv add requests bcrypt
+import requests, bcrypt, httpx #uv add requests bcrypt httpx
 import streamlit as st #uv add streamlit
 import streamlit_authenticator as stauth #uv add streamlit-authenticator
 
@@ -11,22 +11,45 @@ st.set_page_config(
 
 API_URL = "https://memora-tmek.onrender.com"
 
+# def chat_api_stream(session_id, message):
+#     try:
+#         response = requests.post(
+#             f"{API_URL}/chat/stream",
+#             json={
+#                 "session_id": session_id,
+#                 "message": message
+#             },
+#             stream=True)
+#         if response.status_code==200:
+#             return response
+#         else:
+#             st.error(f"Failed to Stream Chat. Status code: {response.status_code}")
+#             return None
+#     except Exception as e:
+#         st.error("Something went wrong.")
+#         return None
+
 def chat_api_stream(session_id, message):
     try:
-        response = requests.post(
-            f"{API_URL}/chat/stream",
-            json={
-                "session_id": session_id,
-                "message": message
-            },
-            stream=True)
-        if response.status_code==200:
-            return response
-        else:
-            st.error(f"Failed to Stream Chat. Status code: {response.status_code}")
-            return None
+        def generate():
+            with httpx.Client(timeout=60.0) as client:
+                with client.stream(
+                    "POST",
+                    f"{API_URL}/chat/stream",
+                    json={
+                        "session_id": session_id,
+                        "message": message
+                    }
+                ) as response:
+                    if response.status_code == 200:
+                        for chunk in response.iter_text():
+                            if chunk:
+                                yield chunk
+                    else:
+                        yield f"Error: {response.status_code}"
+        return generate()
     except Exception as e:
-        st.error("Something went wrong.")
+        st.error(f"[Error Occurred]:\n{e}")
         return None
 
 def register_new_user_api(username, name, email, hashed_password):
@@ -297,7 +320,7 @@ else: #Authentication Successfull
             response = chat_api_stream(st.session_state["session_id"], prompt)
 
             if response:
-                full_response = st.write_stream(response.iter_content(chunk_size=None, decode_unicode=True))
+                full_response = st.write_stream(response)
                 st.session_state["messages"].append({"role": "assistant", "content": full_response})
             else:
                 st.error("Connection error")
