@@ -24,7 +24,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:8501",
-        "https://memora-j.streamlit.app/"
+        "https://memora-j.streamlit.app"
         ],                                                
     allow_methods=["*"],
     allow_headers=["*"],
