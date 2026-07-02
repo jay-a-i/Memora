@@ -1,3 +1,4 @@
+import os
 import requests, bcrypt, httpx #uv add requests bcrypt httpx
 import streamlit as st #uv add streamlit
 import streamlit_authenticator as stauth #uv add streamlit-authenticator
@@ -9,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-API_URL = "https://memora-tmek.onrender.com"
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # def chat_api_stream(session_id, message):
 #     try:
