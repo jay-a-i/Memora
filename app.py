@@ -198,8 +198,9 @@ if not st.session_state.get("authentication_status"):
 
                 if api_response:
                     load_credential_api.clear()
-                    st.success("Account created successfully!\nGo to Login Page")
                     st.rerun()
+                    st.success("Account created successfully!\nGo to Login Page")
+                    
 
 else: #Authentication Successfull
     if "messages" not in st.session_state:
