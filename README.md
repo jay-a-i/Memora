@@ -1,40 +1,41 @@
-Project under Reconstruction!
+# 🛠️ Project Status: Under Reconstruction!
 
-Restructuring the project's Architecture and Structure in this format:
+We are currently restructuring the project's architecture and folder layout into the following format:
 
-frontend/ : Vibe Coding the frontend part
-
-backend/
-├── app/
-│   ├── api/
-│   │   ├── v1/
-│   │   │   ├── endpoints/
-│   │   │   │   ├── chat.py          # SSE streaming endpoint for agentic RAG
-│   │   │   │   ├── documents.py     # Document upload & ingestion triggers
-│   │   │   │   └── health.py
-│   │   │   └── api.py               # Router aggregation
-│   ├── core/
-│   │   ├── config.py                # Pydantic BaseSettings (keys, DB URLs)
-│   │   ├── database.py              # SQLAlchemy / SQLModel async engines
-│   │   └── security.py              # API key validation / Auth
-│   ├── db/
-│   │   ├── models/                  # DB Schemas (Documents, Chunks, Messages)
-│   │   └── migrations/              # Alembic migration scripts
-│   ├── agents/
-│   │   ├── orchestrator.py          # Core ReAct loop engine
-│   │   ├── prompts.py               # System prompts and tool definitions
-│   │   └── state.py                 # Agent execution state dataclasses
-│   ├── tools/                       # Custom Python tools for the Agent
-│   │   ├── hybrid_search.py         # Vector + Keyword search on Postgres
-│   │   ├── doc_inspector.py         # Fetch surrounding chunks / full doc
-│   │   ├── metadata_filter.py       # SQL metadata query tool
-│   │   └── web_search.py            # External search fallback
-│   ├── services/
-│   │   ├── chunking.py              # Parsing & semantic chunking
-│   │   ├── embedding.py             # Embedding generator wrappers
-│   │   └── ingestion.py             # Background pipeline logic
-│   └── schemas/                     # Pydantic schemas for request/response
-├── alembic/
-├── Dockerfile
-├── requirements.txt
-└── main.py                          # Application entry point
+```text
+├── frontend/                     # Vibe Coding the frontend part
+└── backend/
+    ├── app/
+    │   ├── api/
+    │   │   └── v1/
+    │   │       ├── endpoints/
+    │   │       │   ├── chat.py              # SSE streaming endpoint for agentic RAG
+    │   │       │   ├── documents.py         # Document upload & ingestion triggers
+    │   │       │   └── health.py
+    │   │       └── api.py                   # Router aggregation
+    │   ├── core/
+    │   │   ├── config.py                    # Pydantic BaseSettings (keys, DB URLs)
+    │   │   ├── database.py                  # SQLAlchemy / SQLModel async engines
+    │   │   └── security.py                  # API key validation / Auth
+    │   ├── db/
+    │   │   ├── models/                      # DB Schemas (Documents, Chunks, Messages)
+    │   │   └── migrations/                  # Alembic migration scripts
+    │   ├── agents/
+    │   │   ├── orchestrator.py              # Core ReAct loop engine
+    │   │   ├── prompts.py                   # System prompts and tool definitions
+    │   │   └── state.py                     # Agent execution state dataclasses
+    │   ├── tools/                           # Custom Python tools for the Agent
+    │   │   ├── hybrid_search.py             # Vector + Keyword search on Postgres
+    │   │   ├── doc_inspector.py             # Fetch surrounding chunks / full doc
+    │   │   ├── metadata_filter.py           # SQL metadata query tool
+    │   │   └── web_search.py                # External search fallback
+    │   ├── services/
+    │   │   ├── chunking.py                  # Parsing & semantic chunking
+    │   │   ├── embedding.py                 # Embedding generator wrappers
+    │   │   └── ingestion.py                 # Background pipeline logic
+    │   └── schemas/                         # Pydantic schemas for request/response
+    ├── alembic/
+    ├── Dockerfile
+    ├── requirements.txt
+    └── main.py                              # Application entry point
+```
