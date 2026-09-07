@@ -1,0 +1,29 @@
+[project]
+name = "memora"
+version = "0.1.0"
+description = "Agentic RAG"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
+    "pydantic",
+    "requests",
+    "psycopg[binary]",
+    "psycopg-pool",
+    "langchain-core",
+    "langchain-openai",
+    "langchain-community",
+    "langchain-nvidia-ai-endpoints",
+    "langchain-text-splitters",
+    "pypdf",
+    "httpx",
+    "bcrypt",
+    "streamlit-authenticator>=0.3.0",
+    "python-multipart",
+    "modal>=1.5.5",
+    "ipython>=9.17.1",
+    "langchain-tavily>=0.2.18",
+    "tavily>=1.1.0",
+]
