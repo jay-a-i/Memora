@@ -1,7 +1,8 @@
-import os
 import asyncio
 from dotenv import load_dotenv
 from tavily import TavilyClient
+
+from app.core.config import settings
 
 load_dotenv()
 
@@ -28,7 +29,7 @@ WEB_SEARCH_SCHEMA = {
     },
 }
 
-api_key = os.getenv("TAVILY_API_KEY")
+api_key = settings.TAVILY_API_KEY
 tavily_client = TavilyClient(api_key=api_key) if api_key else None
 
 

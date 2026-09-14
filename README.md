@@ -1,9 +1,8 @@
 # 🛠️ Project Status: Under Reconstruction!
-
-We are currently restructuring the project's architecture and folder layout into the following format:
+I'm currently restructuring the project's architecture and folder layout into the following format:
 
 ```text
-├── frontend/                     # Vibe Coding the frontend part
+├── frontend/  # Vibe Coding the frontend part
 └── backend/
     ├── app/
     │   ├── api/

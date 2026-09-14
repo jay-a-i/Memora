@@ -2,7 +2,7 @@
 
 """ Neccessary imports. """
 
-import os, json
+import json
 from dotenv import load_dotenv
 
 from langchain_openai import ChatOpenAI
@@ -11,8 +11,8 @@ from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
 
 from app.agents.state import AgentState
 from app.agents.prompts import AGENT_SYSTEM_PROMPT
-from app.tools import TOOL_SCHEMAS, TOOLS_MAP
-
+from app.core.config import settings
+from app.tools import tool_schemas, TOOLS_MAP
 
 """ Loading the .env Secrets. """
 load_dotenv() 
@@ -23,10 +23,10 @@ load_dotenv()
 llm = ChatOpenAI(
     model="minimax/minimax-m3:free",
     base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY_JAY009294"),
+    api_key=settings.OPENROUTER_API_KEY,
     streaming=True,
 ).bind_tools(
-    tools=TOOL_SCHEMAS, 
+    tools=tool_schemas, 
     tool_choice="auto", 
     parallel_tool_calls=True)
 
@@ -48,6 +48,11 @@ async def llm_node(state: AgentState):
     }
 
 def decision(state: AgentState): 
+    """
+    This function is the conditional edge 
+    that dicides whether to perform tool call or llm call.
+    """
+
     if state.get("tool_call_count", 0) >= 5 or state.get("llm_call_count", 0) >= 10:
         return "circuit_breaker"
 
