@@ -29,13 +29,13 @@ I'm currently restructuring the project's architecture and folder layout into th
     │   │   ├── metadata_filter.py           # SQL metadata query tool
     │   │   └── web_search.py                # External search fallback
     │   ├── services/
-    │   │   ├── doc_to_md.py             # Convert the Target file to a markdown file
+    │   │   ├── doc_to_md.py                 # Convert the Target file to a markdown file
     │   │   ├── chunking.py                  # Chunk the markdown file
     │   │   ├── embedding.py                 # Embedding generator wrappers
     │   │   └── ingestion.py                 # Background pipeline logic
     │   └── schemas/                         # Pydantic schemas for request/response
     ├── alembic/
     ├── Dockerfile
-    ├── requirements.txt
+    ├── pyproject.toml                       # Dependencies for the 
     └── main.py                              # Application entry point
 ```
