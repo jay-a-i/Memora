@@ -1,11 +1,7 @@
 # backend/app/tools/hybrid_search.py
 
-import os
 from sqlalchemy import text
-from langchain_openai import OpenAIEmbeddings
-
-# Ensure you have OPENAI_API_KEY in your .env for the embeddings
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+from app.services.embedding import generate_embeddings
 
 HYBRID_SEARCH_SCHEMA = {
     "type": "function",
@@ -35,10 +31,9 @@ async def execute_hybrid_search(query: str, db_session=None, **kwargs) -> list:
         return [{"error": "Database session missing. Cannot perform search."}]
     
     try:
-        # 1. Generate the vector for the search query
-        query_vector = await embeddings.aembed_query(query)
+        query_vector = await generate_embeddings(query)
         
-        # 2. Execute the RRF (Reciprocal Rank Fusion) raw SQL query
+        #Execute the RRF (Reciprocal Rank Fusion) raw SQL query
         sql = text("""
             WITH vector_search AS (
                 SELECT document_id, chunk_index, content, 
