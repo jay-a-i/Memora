@@ -36,6 +36,6 @@ I'm currently restructuring the project's architecture and folder layout into th
     │   └── schemas/                         # Pydantic schemas for request/response
     ├── alembic/
     ├── Dockerfile
-    ├── pyproject.toml                       # Dependencies for the 
+    ├── pyproject.toml                       # Dependencies for the entire backend
     └── main.py                              # Application entry point
 ```
