@@ -1,8 +1,5 @@
-# backend/app/api/v1/endpoints/documents.py
-
 import os
 import uuid
-from typing import List
 from fastapi import (
     APIRouter,
     Depends,
@@ -16,14 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
-from backend.app.db.models.document import Document
-from app.schemas.document_schemas import (
+from app.db.models.document import Document
+from backend.schemas.document_schemas import (
     DocumentUploadResponse,
     DocumentResponse,
     DocumentListResponse,
     DocumentStatus,
 )
-from app.services.ingestion import process_and_embed_document
+from app.services.ingestion import ProcessFile
 
 router = APIRouter()
 
@@ -82,10 +79,10 @@ async def upload_document(
         )
 
     # 5. Dispatch non-blocking ingestion job to FastAPI BackgroundTasks
+    processor = ProcessFile()
     background_tasks.add_task(
-        process_and_embed_document,
+        processor.upload_file,
         file_path=temp_file_path,
-        document_id=doc_id,
     )
 
     return DocumentUploadResponse(
