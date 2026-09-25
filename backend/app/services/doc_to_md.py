@@ -47,7 +47,7 @@ def doc_to_md(
                     )
                     f.write(md_batch + "\n\n")
                     print(f"Processed pages {i} to {end_page - 1}")
-
+                    
         return {
             "output_md": output_md,
             "image_dir": image_dir
