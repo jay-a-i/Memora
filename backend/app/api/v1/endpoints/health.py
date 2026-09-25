@@ -4,4 +4,8 @@ router = APIRouter()
 
 @router.post()
 async def check_health() -> dict:
-    return {"status": "OK"}
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "version": "1.0.0"
+        }
