@@ -29,7 +29,7 @@ I'm currently restructuring the project's architecture and folder layout into th
     │   │   ├── metadata_filter.py           # SQL metadata query tool
     │   │   └── web_search.py                # External search fallback
     │   ├── services/
-    │   │   ├── convert_to_md.py             # Convert the Target file to a markdown file
+    │   │   ├── doc_to_md.py             # Convert the Target file to a markdown file
     │   │   ├── chunking.py                  # Chunk the markdown file
     │   │   ├── embedding.py                 # Embedding generator wrappers
     │   │   └── ingestion.py                 # Background pipeline logic
