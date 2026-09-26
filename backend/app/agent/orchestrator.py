@@ -7,8 +7,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
 
-from app.agents.state import AgentState
-from app.agents.prompts import AGENT_SYSTEM_PROMPT
+from app.agent.state import AgentState
+from app.agent.prompts import AGENT_SYSTEM_PROMPT
 from app.core.config import settings
 from app.tools import tool_schemas, TOOLS_MAP
 
