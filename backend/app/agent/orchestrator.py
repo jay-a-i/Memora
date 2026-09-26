@@ -7,10 +7,10 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
 
-from app.agent.state import AgentState
-from app.agent.prompts import AGENT_SYSTEM_PROMPT
-from app.core.config import settings
-from app.tools import tool_schemas, TOOLS_MAP
+from backend.app.agent.state import AgentState
+from backend.app.agent.prompts import AGENT_SYSTEM_PROMPT
+from backend.app.core.config import settings
+from backend.app.tools import tool_schemas, TOOLS_MAP
 
  
 """ Initializing the LLM and Binding the LLM with the available tools. """
