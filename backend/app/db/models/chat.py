@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from app.db.models import Base
+from backend.app.db.models import Base
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
