@@ -1,7 +1,7 @@
 # backend/app/tools/hybrid_search.py
 
 from sqlalchemy import text
-from app.services.embedding import generate_embeddings
+from backend.app.services.embedding import generate_embeddings
 
 HYBRID_SEARCH_SCHEMA = {
     "type": "function",
