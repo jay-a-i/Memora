@@ -12,11 +12,11 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.database import get_db
-from app.services.ingestion import ProcessFile
-from app.db.models.document import Document
-from app.core.security import verify_api_hitter
-from schemas.document_schemas import (
+from backend.app.core.database import get_db
+from backend.app.services.ingestion import ProcessFile
+from backend.app.db.models.document import Document
+from backend.app.core.security import verify_api_hitter
+from backend.schemas import (
     DocumentUploadResponse,
     DocumentResponse,
     DocumentListResponse,
@@ -71,7 +71,6 @@ async def upload_document(
         with open(temp_file_path, "wb") as f:
             f.write(contents)
     except Exception as e:
-        # Rollback and mark document as FAILED if disk write fails
         new_doc.status = DocumentStatus.FAILED.value
         new_doc.error_message = f"Failed to save temporary file: {str(e)}"
         await db.commit()
@@ -80,7 +79,6 @@ async def upload_document(
             detail=f"Could not save file to disk: {str(e)}",
         )
 
-    # 5. Dispatch non-blocking ingestion job to FastAPI BackgroundTasks
     processor = ProcessFile()
     background_tasks.add_task(
         processor.upload_file,
@@ -96,10 +94,13 @@ async def upload_document(
 
 
 
-@router.get("/", response_model=DocumentListResponse)
+@router.get(
+    "/",
+    response_model=DocumentListResponse
+)
 async def list_documents(
     db: AsyncSession = Depends(get_db),
-    _oauth: str = Depends(verify_api_hitter)
+    _oauth: str = Depends(verify_api_hitter),
 ):
     """
     Retrieves all uploaded documents and their current processing status.
@@ -114,10 +115,14 @@ async def list_documents(
     )
 
 
-@router.get("/{document_id}", response_model=DocumentResponse)
+@router.get(
+    "/{document_id}", 
+    response_model=DocumentResponse
+)
 async def get_document_status(
-    document_id: uuid.UUID, db: AsyncSession = Depends(get_db),
-    _oauth: str = Depends(verify_api_hitter)
+    document_id: uuid.UUID, 
+    db: AsyncSession = Depends(get_db),
+    _oauth: str = Depends(verify_api_hitter),
 ):
     """
     Fetches status and metadata for a single document by its UUID.
@@ -135,10 +140,14 @@ async def get_document_status(
     return DocumentResponse.model_validate(document)
 
 
-@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
 async def delete_document(
-    document_id: uuid.UUID, db: AsyncSession = Depends(get_db),
-    _oauth: str = Depends(verify_api_hitter)
+    document_id: uuid.UUID, 
+    db: AsyncSession = Depends(get_db),
+    _oauth: str = Depends(verify_api_hitter),
 ):
     """
     Deletes a document from PostgreSQL. 
