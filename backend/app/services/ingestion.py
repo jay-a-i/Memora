@@ -3,12 +3,12 @@ import uuid
 import shutil
 from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
-from app.db.models.document import Document, DocumentChunk
-from app.services.doc_to_md import doc_to_md
-from app.services.chunking import chunk_text
-from app.services.embedding import generate_embeddings
-from schemas.document_schemas import DocumentStatus
+from backend.app.core.database import AsyncSessionLocal
+from backend.app.db.models.document import Document, DocumentChunk
+from backend.app.services.doc_to_md import doc_to_md
+from backend.app.services.chunking import chunk_text
+from backend.app.services.embedding import generate_embeddings
+from backend.schemas import DocumentStatus
 
 class ProcessFile:
 
