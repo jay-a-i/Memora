@@ -37,5 +37,5 @@ I'm currently restructuring the project's architecture and folder layout into th
     ├── alembic/
     ├── Dockerfile
     ├── pyproject.toml                       # Dependencies for the entire backend
-    └── main.py                              # Application entry point
+├── main.py                              # Application entry point
 ```
