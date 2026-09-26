@@ -5,10 +5,10 @@ from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
 from app.db.models.document import Document, DocumentChunk
-from backend.schemas.document_schemas import DocumentStatus
-from backend.app.services.doc_to_md import doc_to_md
+from app.services.doc_to_md import doc_to_md
 from app.services.chunking import chunk_text
 from app.services.embedding import generate_embeddings
+from schemas.document_schemas import DocumentStatus
 
 class ProcessFile:
 
