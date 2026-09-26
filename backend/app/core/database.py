@@ -1,9 +1,7 @@
 # app/core/database.py
 
 """ IMPORTS """
-
-from app.core.config import settings 
-
+from backend.app.core.config import settings 
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import (
     create_async_engine,   
