@@ -13,14 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.services.ingestion import ProcessFile
 from app.db.models.document import Document
-from backend.schemas.document_schemas import (
+from app.core.security import verify_api_hitter
+from schemas.document_schemas import (
     DocumentUploadResponse,
     DocumentResponse,
     DocumentListResponse,
     DocumentStatus,
 )
-from app.services.ingestion import ProcessFile
 
 router = APIRouter()
 
@@ -35,6 +36,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _oauth: str = Depends(verify_api_hitter)
 ):
     """
     Accepts a document upload, logs an initial record in PostgreSQL with status 'PROCESSING',
@@ -92,8 +94,13 @@ async def upload_document(
         message="Document uploaded successfully. Background processing started.",
     )
 
+
+
 @router.get("/", response_model=DocumentListResponse)
-async def list_documents(db: AsyncSession = Depends(get_db)):
+async def list_documents(
+    db: AsyncSession = Depends(get_db),
+    _oauth: str = Depends(verify_api_hitter)
+):
     """
     Retrieves all uploaded documents and their current processing status.
     """
@@ -109,7 +116,8 @@ async def list_documents(db: AsyncSession = Depends(get_db)):
 
 @router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document_status(
-    document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    document_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    _oauth: str = Depends(verify_api_hitter)
 ):
     """
     Fetches status and metadata for a single document by its UUID.
@@ -129,7 +137,8 @@ async def get_document_status(
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
-    document_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    document_id: uuid.UUID, db: AsyncSession = Depends(get_db),
+    _oauth: str = Depends(verify_api_hitter)
 ):
     """
     Deletes a document from PostgreSQL. 
