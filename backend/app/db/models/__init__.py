@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
-from backend.app.db.models.chat import ChatSession, ChatMessage
-from backend.app.db.models.document import Document, DocumentChunk
+from .chat import ChatSession, ChatMessage
+from .document import Document, DocumentChunk
 
 __all__ = ["Base", "ChatSession", "ChatMessage", "Document", "DocumentChunk"]
