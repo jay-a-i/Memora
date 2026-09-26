@@ -2,7 +2,7 @@ import asyncio
 from dotenv import load_dotenv
 from tavily import TavilyClient
 
-from app.core.config import settings
+from backend.app.core.config import settings
 
 load_dotenv()
 
