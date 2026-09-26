@@ -12,7 +12,7 @@ Embedder = OpenAIEmbeddings(
         check_embedding_ctx_length=False
     )
 
-async def generate_embeddings(
+async def embed_documents(
         texts: List[str], 
         batch_size: int = 32
     ) -> Optional[List[List[float]]]:
@@ -46,7 +46,32 @@ async def generate_embeddings(
             all_embeddings.extend(embeddings)
         except Exception as e:
             return f"Error occured in Embedding Model\n[Error]: [{e}]"
-            
-    print("Successfully generated embeddings")
-    print(f"Length of embeddings list: {len(all_embeddings)}")
     return all_embeddings
+
+
+async def embed_query(
+        query: str
+    ) -> Optional[List[List[float]]]:
+
+
+    """
+    Asynchronously generates dense vector embedding for the query text.
+
+    Args:
+        query (str): raw text to embed.
+
+    Returns:
+        Optional[List[List[float]]]: A list of floating-point vector arrays corresponding to the input text.
+            Returns an empty list if `query` is empty.
+
+    Raises:
+        RuntimeError: If the embedding API request fails.
+    """
+
+    if not query:
+        return []
+    try:
+        query_embedding = await Embedder.aembed_query(query)
+        return query_embedding
+    except Exception as e:
+        return f"Error occured in Embedding Model\n[Error]: [{e}]"
