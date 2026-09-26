@@ -6,9 +6,9 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, AIMessage
 
 from app.agents.orchestrator import graph
-from backend.schemas.chat_schemas import ChatRequestSchema
 from app.core.database import get_db 
 from app.core.security import verify_api_hitter
+from schemas.chat_schemas import ChatRequestSchema
 
 
 router = APIRouter()
