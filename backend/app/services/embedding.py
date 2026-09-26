@@ -1,7 +1,7 @@
 #backend/app/services/embedding.py
 
 from typing import List, Optional
-from app.core.config import settings
+from backend.app.core.config import settings
 from langchain_openai import OpenAIEmbeddings
 
 Embedder = OpenAIEmbeddings(
