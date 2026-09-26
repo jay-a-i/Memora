@@ -2,7 +2,7 @@
 
 from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader
-from app.core.config import settings
+from backend.app.core.config import settings
 
 """Look for the "APP_SECURITY_KEY" header in incoming requests"""
 api_key_header = APIKeyHeader(name="APP_SECURITY_KEY")
