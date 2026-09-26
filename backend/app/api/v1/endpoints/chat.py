@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.agents.orchestrator import graph
-from app.core.database import get_db 
-from app.core.security import verify_api_hitter
-from schemas.chat_schemas import ChatRequestSchema
+from backend.app.agent.orchestrator import graph
+from backend.app.core.database import get_db 
+from backend.app.core.security import verify_api_hitter
+from backend.schemas.chat_schemas import ChatRequestSchema
 
 
 router = APIRouter()
@@ -36,12 +36,11 @@ async def chat_stream(
     config = {
         "configurable": {
             "db_session": db_session,
-            "thread_id": request.session_id # LangGraph uses this for memory tracking
+            "thread_id": request.session_id
         }
     }
     async def sse_generator():
         try:
-            # astream_events (v2) tracks internal tool calls and LLM streams natively
             async for event in graph.astream_events(
                 {"messages": formatted_messages}, 
                 config=config, 
