@@ -1,7 +1,7 @@
 # backend/app/tools/hybrid_search.py
 
 from sqlalchemy import text
-from backend.app.services.embedding import generate_embeddings
+from backend.app.services.embedding import embed_query
 
 HYBRID_SEARCH_SCHEMA = {
     "type": "function",
@@ -31,7 +31,7 @@ async def execute_hybrid_search(query: str, db_session=None, **kwargs) -> list:
         return [{"error": "Database session missing. Cannot perform search."}]
     
     try:
-        query_vector = await generate_embeddings(query)
+        query_vector = await embed_query(query)
         
         #Execute the RRF (Reciprocal Rank Fusion) raw SQL query
         sql = text("""
