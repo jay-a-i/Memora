@@ -6,7 +6,7 @@ from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
-from app.db.models import Base
+from backend.app.db.models import Base
 
 class Document(Base):
     __tablename__ = "documents"
