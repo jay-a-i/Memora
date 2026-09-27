@@ -3,7 +3,7 @@ I'm currently restructuring the project's architecture and folder layout into th
 
 ```text
 ├── frontend/                                # Vibe Coding the frontend part
-└── backend/
+├── backend/
     ├── app/
     │   ├── api/
     │   │   └── v1/
