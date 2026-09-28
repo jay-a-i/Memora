@@ -6,6 +6,7 @@ import json
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 
 from backend.app.agent.state import AgentState
 from backend.app.agent.prompts import AGENT_SYSTEM_PROMPT
@@ -55,7 +56,7 @@ def decision(state: AgentState):
         return "tools"
     return END
 
-async def tool_executor(state: AgentState, config: dict):
+async def tool_executor(state: AgentState, config: RunnableConfig):
     """
     A custom node to execute tools requested by the LLM.
     """
