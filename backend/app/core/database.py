@@ -3,6 +3,7 @@
 """ IMPORTS """
 from backend.app.core.config import settings 
 from typing import AsyncGenerator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     create_async_engine,   
     AsyncSession,        
@@ -42,3 +43,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+
+async def check_db_health(session: AsyncSession | None = None):
+    """
+    Pings the database with 'SELECT 1' to ensure the connection pool and engine are responsive.
+    """
+    stmt = text("SELECT 1")
+    try:
+        if session:
+            await session.execute(stmt)
+        else:
+            async with AsyncSessionLocal() as db:
+                await db.execute(stmt)
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
