@@ -20,7 +20,6 @@ dependencies = [
     "pypdf",
     "httpx",
     "bcrypt",
-    "streamlit-authenticator>=0.3.0",
     "python-multipart",
     "modal>=1.5.5",
     "ipython>=9.17.1",
@@ -30,4 +29,6 @@ dependencies = [
     "python-docx>=1.2.0",
     "pymupdf>=1.28.2",
     "pymupdf4llm>=1.28.2",
+    "asyncpg>=0.31.0",
+    "greenlet>=3.5.5",
 ]
