@@ -1,13 +1,13 @@
 # backend/app/schemas/common_schemas.py
 
-from typing import Optional
+from typing import Optional, Dict
 from pydantic import BaseModel
 
 
 class HealthCheckResponse(BaseModel):
     status: str = "healthy"
-    database: str = "connected"
-    version: str = "1.0.0"
+    database: Dict[str, str]
+    version: str
 
 
 class ErrorResponse(BaseModel):
