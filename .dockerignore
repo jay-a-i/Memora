@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.git/
+
+.env
+*.env
+app.env
+app.env.example
+
+temp_uploads/
+tests/
+README.md
+AGENT.md
