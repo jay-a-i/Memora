@@ -4,3 +4,9 @@ __pycache__/
 venv/
 .git/
 .env
+*.env
+app.env
+app.env.example
+temp_uploads/
+tests/
+README.md
