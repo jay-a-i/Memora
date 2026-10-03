@@ -16,18 +16,27 @@ class Settings(BaseSettings):
     BACKEND_VERSION: str = "1.0"
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
 
+    # --- DATABASE ------------------------------------------------------------
     DATABASE_URL: str
     DB_ECHO: bool = True  # Log every statement in the terminal if True.
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
 
-    OPENROUTER_API_KEY: str
+    # --- API KEYS ------------------------------------------------------------
+    OPENROUTER_API_KEY: str #API_KEY for LLM
+    COHERE_API_KEY: str # API_KEY for Embedding model
     TAVILY_API_KEY: str | None = None
     APP_API_KEY: str  # Key required to access resources from any api endpoint.
 
-    EMBEDDING_DIMENSIONS: int = 2048
+    # --- MODEL ------------------------------------------------------------
+    LLM: str = "" # Not decided yet
+    EMBEDDING_MODEL: str = "embed-v5.0-pro" # Cohere's Embedding model 
+    
+    # --- EMBEDDING ------------------------------------------------------------
+    EMBEDDING_DIMENSIONS: int = 1536
     EMBEDDING_BATCH_SIZE: int = 32
 
+    # --- Ingestion ------------------------------------------------------------
     UPLOAD_DIR: str = "temp_uploads"
     MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024
     ALLOWED_EXTENSIONS: List[str] = [".pdf", ".txt", ".md", ".docx"]
