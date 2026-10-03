@@ -23,8 +23,9 @@ async def verify_api_hitter(api_key: str | None = Security(api_key_header)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Server configuration error: Security key not set.",
         )
-
-    if not api_key or not secrets.compare_digest(api_key, master_key):
+    if not api_key or not secrets.compare_digest(
+        api_key.encode("utf-8"), master_key.encode("utf-8")
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Forbidden: Invalid or missing API key",
