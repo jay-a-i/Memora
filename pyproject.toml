@@ -6,29 +6,48 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
-    "uvicorn",
+    "uvicorn[standard]",
     "python-dotenv",
+    "python-multipart",
     "pydantic",
-    "requests",
+    "pydantic-settings",
+    "httpx",
+    # Database
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.31.0",
     "psycopg[binary]",
-    "psycopg-pool",
+    "greenlet>=3.5.5",
+    "pgvector>=0.5.0",
+    # Agent + LLM
     "langchain-core",
     "langchain-openai",
     "langchain-community",
-    "langchain-nvidia-ai-endpoints",
     "langchain-text-splitters",
-    "pypdf",
-    "httpx",
-    "bcrypt",
-    "python-multipart",
-    "modal>=1.5.5",
-    "ipython>=9.17.1",
+    "langgraph",
     "langchain-tavily>=0.2.18",
     "tavily>=1.1.0",
-    "pgvector>=0.5.0",
-    "python-docx>=1.2.0",
+    # Document parsing
     "pymupdf>=1.28.2",
     "pymupdf4llm>=1.28.2",
-    "asyncpg>=0.31.0",
-    "greenlet>=3.5.5",
+    "pypdf",
+    "python-docx>=1.2.0",
+    "pytest>=9.1.1",
+    "langchain-cohere>=0.6.0",
+    "cohere>=5.21.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
