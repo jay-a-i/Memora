@@ -22,16 +22,16 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
 
-    # --- API KEYS ------------------------------------------------------------
-    OPENROUTER_API_KEY: str #API_KEY for LLM
-    COHERE_API_KEY: str # API_KEY for Embedding model
+    # --- SECRETS ------------------------------------------------------------
+    OPENROUTER_API_KEY: str  # Chat completions, via OpenRouter.
+    COHERE_API_KEY: str      # Embeddings, via Cohere.
     TAVILY_API_KEY: str | None = None
     APP_API_KEY: str  # Key required to access resources from any api endpoint.
 
     # --- MODEL ------------------------------------------------------------
-    LLM: str = "" # Not decided yet
-    EMBEDDING_MODEL: str = "embed-v5.0-pro" # Cohere's Embedding model 
-    
+    LLM: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    EMBEDDING_MODEL: str = "embed-v5.0-pro"
+
     # --- EMBEDDING ------------------------------------------------------------
     EMBEDDING_DIMENSIONS: int = 1536
     EMBEDDING_BATCH_SIZE: int = 32
@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     MAX_TOOL_CALLS: int = 8
     MAX_LLM_CALLS: int = 12
     MAX_HISTORY_MESSAGES: int = 20
-    MAX_FILE_UPLOAD_BYTES: int = 5 * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file="app.env",
@@ -84,21 +83,37 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def _check_openrouter_key(self) -> "Settings":
+    def _check_model_credentials(self) -> "Settings":
         """
-        OpenRouter serves both the chat and embeddings endpoints, so its key
-        is the only model credential the app needs.
+        Both model providers are required: OpenRouter serves chat completions,
+        Cohere serves embeddings.
+
+        Without this the app imports and starts, then fails per request with a
+        provider-side error instead of naming the missing key at boot.
         """
         if not self.OPENROUTER_API_KEY:
-            raise ValueError(
-                "OPENROUTER_API_KEY is required: OpenRouter serves both the "
-                "chat completions and the embeddings endpoint."
-            )
+            raise ValueError("OPENROUTER_API_KEY is required for chat completions.")
+        if not self.COHERE_API_KEY:
+            raise ValueError("COHERE_API_KEY is required for embeddings.")
         return self
 
-    @property
-    def embedding_api_key(self) -> str:
-        return self.OPENROUTER_API_KEY
+    @field_validator("LLM", "EMBEDDING_MODEL", mode="after")
+    @classmethod
+    def _reject_blank_model_id(cls, v: str) -> str:
+        """
+        Guards against an empty model id reaching a provider.
+
+        An `app.env` line like `LLM=""` sets the variable to an empty string,
+        which overrides the default rather than falling back to it. The request
+        then fails at the provider with a message that does not mention
+        configuration, so the cause is easy to miss. Failing at startup names it.
+        """
+        if not v.strip():
+            raise ValueError(
+                "must name a model; remove the line from app.env to use the "
+                "default, or set it to a real model id"
+            )
+        return v
 
 
 """
