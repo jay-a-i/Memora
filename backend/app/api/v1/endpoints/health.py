@@ -1,23 +1,41 @@
-from typing import Dict
-from fastapi import APIRouter, Depends
-from backend.app.core.security import verify_api_hitter
-from backend.app.core.database import check_db_health
+import logging
+
+from fastapi import APIRouter, Depends, Response, status
+
 from backend.app.core.config import settings
-from backend.schemas import HealthCheckResponse
+from backend.app.core.database import check_db_health
+from backend.app.core.security import verify_api_hitter
+from backend.schemas.common_schemas import HealthCheckResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.get("/",
+
+@router.get(
+    "/",
     response_model=HealthCheckResponse,
+    summary="Service and database health",
 )
 async def check_health(
-    _oauth: str = Depends(verify_api_hitter),
-) -> Dict[str, str]:
-    
+    response: Response,
+    _auth: str = Depends(verify_api_hitter),
+) -> HealthCheckResponse:
+    """
+    Reports service and database health.
+
+    Returns 503 when the database is unreachable so orchestrators and load
+    balancers can act on the status code rather than parsing the body.
+    """
     db_info = await check_db_health()
+    healthy = db_info.get("status") == "healthy"
+
+    if not healthy:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        logger.warning("Health check failed: %s", db_info)
 
     return HealthCheckResponse(
-        status="Healthy",
+        status="healthy" if healthy else "unhealthy",
         database=db_info,
-        version=settings.BACKEND_VERSION
+        version=settings.BACKEND_VERSION,
     )
