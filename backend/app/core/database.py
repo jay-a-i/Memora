@@ -1,23 +1,31 @@
 # app/core/database.py
 
 """ IMPORTS """
-from backend.app.core.config import settings 
+import logging
 from typing import AsyncGenerator
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
-    create_async_engine,   
-    AsyncSession,        
-    async_sessionmaker   
+    create_async_engine,
+    AsyncSession,
+    async_sessionmaker,
 )
+
+from backend.app.core.config import settings
+from backend.app.core.errors import client_message
+
+logger = logging.getLogger(__name__)
+
 
 """ Initializing connection with Database """
 
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DB_ECHO,
-    pool_size=20,       
-    max_overflow=10,   
-    pool_pre_ping=True  
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_pre_ping=True,
+    pool_recycle=1800,
 )
 
 """ Creatinng session"""
@@ -26,7 +34,7 @@ AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
-    autoflush=False
+    autoflush=False,
 )
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -57,4 +65,12 @@ async def check_db_health(session: AsyncSession | None = None):
                 await db.execute(stmt)
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
-        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+        # Health is an authenticated endpoint but still an API surface, and a
+        # driver error names the host, the port, and sometimes the DSN. The
+        # detail goes to the log; the response says only that it is down.
+        logger.exception("Database health check failed")
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": client_message(e),
+        }
