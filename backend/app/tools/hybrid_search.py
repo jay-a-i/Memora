@@ -4,7 +4,6 @@ import logging
 
 from sqlalchemy import text
 
-from backend.app.core.config import settings
 from backend.app.core.errors import client_message
 from backend.app.services.embedding import embed_query
 
@@ -43,31 +42,46 @@ HYBRID_SEARCH_SCHEMA = {
 # requires, because it only ever sees a bare UUID.
 HYBRID_SEARCH_SQL = text(
     f"""
-    WITH vector_search AS (
+    -- The rank is computed in an outer SELECT over the already-limited CTE, not
+    -- inline as row_number() OVER (ORDER BY ...). Window functions are evaluated
+    -- before ORDER BY/LIMIT, so numbering inside the CTE forced Postgres to rank
+    -- every chunk in the table and then discard all but :candidates -- losing
+    -- the early termination that makes the HNSW index worth having, and
+    -- computing the distance twice per row. Ranking after the LIMIT is
+    -- equivalent for ranks 1..N and lets the index do its job.
+    WITH vector_top AS (
         SELECT c.document_id,
                c.chunk_index,
                c.content,
                d.filename,
-               row_number() OVER (ORDER BY c.embedding <=> :vector) AS rank
+               c.embedding <=> :vector AS distance
         FROM document_chunks c
         JOIN documents d ON d.id = c.document_id
         WHERE c.embedding IS NOT NULL
         ORDER BY c.embedding <=> :vector
         LIMIT :candidates
     ),
-    fts_search AS (
+    vector_search AS (
+        SELECT document_id, chunk_index, content, filename,
+               row_number() OVER (ORDER BY distance) AS rank
+        FROM vector_top
+    ),
+    fts_top AS (
         SELECT c.document_id,
                c.chunk_index,
                c.content,
                d.filename,
-               row_number() OVER (
-                   ORDER BY ts_rank_cd(c.fts_content, websearch_to_tsquery('english', :query)) DESC
-               ) AS rank
+               ts_rank_cd(c.fts_content, websearch_to_tsquery('english', :query)) AS score
         FROM document_chunks c
         JOIN documents d ON d.id = c.document_id
         WHERE c.fts_content @@ websearch_to_tsquery('english', :query)
-        ORDER BY ts_rank_cd(c.fts_content, websearch_to_tsquery('english', :query)) DESC
+        ORDER BY score DESC
         LIMIT :candidates
+    ),
+    fts_search AS (
+        SELECT document_id, chunk_index, content, filename,
+               row_number() OVER (ORDER BY score DESC) AS rank
+        FROM fts_top
     )
     SELECT COALESCE(v.document_id, f.document_id) AS document_id,
            COALESCE(v.chunk_index, f.chunk_index) AS chunk_index,

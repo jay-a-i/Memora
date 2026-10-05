@@ -128,17 +128,35 @@ def test_ingestion_failure_message_is_actionable(tmp_path, stub_ingestion_db):
 def test_fts_arm_orders_before_limiting():
     """
     The FTS arm had a window function but no ORDER BY before LIMIT, so the 20
-    surviving rows were arbitrary and their RRF ranks meaningless. The vector
-    arm already did this correctly.
+    surviving rows were arbitrary and their RRF ranks meaningless.
+
+    Both arms now rank in an outer SELECT over a CTE that already applies
+    ORDER BY ... LIMIT, because a window function is evaluated before ORDER BY and
+    LIMIT: numbering inline forced Postgres to rank every matching row and then
+    throw away all but :candidates, which also defeats the HNSW index on the
+    vector arm.
     """
     from backend.app.tools.hybrid_search import HYBRID_SEARCH_SQL
 
     sql = HYBRID_SEARCH_SQL.text
-    fts = sql.split("fts_search AS (")[1]
 
+    # The ranking CTEs must not contain the ordering themselves...
+    for arm in ("vector_search AS (", "fts_search AS ("):
+        body = sql.split(arm)[1].split("),")[0]
+        assert "LIMIT" not in body, f"{arm} must rank a pre-limited set"
+        assert re.search(r"row_number\(\)\s+OVER", body, re.I), (
+            f"{arm} must derive its rank with row_number()"
+        )
+
+    # ...and the CTEs feeding them must order before limiting.
     assert re.search(
-        r"ORDER BY\s+ts_rank_cd.*?LIMIT\s+:candidates", fts, re.S | re.I
+        r"fts_top AS \(.*?ORDER BY\s+score DESC.*?LIMIT\s+:candidates", sql, re.S | re.I
     ), "FTS arm must sort by rank before LIMIT"
+    assert re.search(
+        r"vector_top AS \(.*?ORDER BY\s+c\.embedding\s+<=>\s+:vector.*?LIMIT\s+:candidates",
+        sql,
+        re.S | re.I,
+    ), "vector arm must sort by distance before LIMIT"
 
 
 # --------------------------------------------------------- streaming narrative

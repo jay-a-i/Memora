@@ -189,6 +189,42 @@ def circuit_breaker_node(state: AgentState):
     """
     Failsafe node when the agent gets stuck in a loop.
     """
+    messages = state["messages"]
+
+    # Every tool call the model requested needs an answer, even when the budget
+    # runs out. Leaving an AIMessage's tool_calls unanswered makes the message
+    # list invalid: providers reject a request whose tool calls have no matching
+    # ToolMessages. Harmless today only because the endpoint flattens history to
+    # text, but the checkpointed state keeps the real message objects, so an
+    # unbalanced list would be replayed verbatim on the next turn.
+    answered = {
+        getattr(m, "tool_call_id", None)
+        for m in messages
+        if isinstance(m, ToolMessage)
+    }
+    replies: list[ToolMessage] = []
+    for message in reversed(messages):
+        for call in getattr(message, "tool_calls", None) or []:
+            call_id = call.get("id") or f"call_{call.get('name')}"
+            if call_id in answered:
+                continue
+            answered.add(call_id)
+            replies.append(
+                ToolMessage(
+                    content=json.dumps(
+                        {
+                            "error": (
+                                "Search stopped: the agent reached its step limit "
+                                "before this lookup ran."
+                            )
+                        }
+                    ),
+                    tool_call_id=call_id,
+                    name=call.get("name") or "tool",
+                )
+            )
+    replies.reverse()
+
     emergency_message = AIMessage(
         content=(
             "I apologize, but I had to stop searching because I am stuck in a "
@@ -196,7 +232,7 @@ def circuit_breaker_node(state: AgentState):
             "question."
         )
     )
-    return {"messages": [emergency_message]}
+    return {"messages": [*replies, emergency_message]}
 
 
 

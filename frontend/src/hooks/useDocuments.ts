@@ -56,13 +56,28 @@ export function useDocuments(): UseDocumentsResult {
   const [rejection, setRejection] = useState<UploadRejection | null>(null);
 
   const requestId = useRef(0);
+  // Ids removed optimistically but not yet confirmed by the server. A poll that
+  // was already in flight when the delete began can resolve with the deleted
+  // row still in its payload, which put the row back on screen until the next
+  // tick. Filtering these ids out of every refresh closes that window.
+  const pendingDeletes = useRef<Set<string>>(new Set());
+  // Holds the removed row itself, so a failed delete can put back exactly that
+  // document instead of a stale copy of the whole list.
+  const rollbackRef = useRef<Map<string, DocumentDto | null>>(new Map());
 
   const refresh = useCallback(async () => {
     const id = ++requestId.current;
     try {
       const data = await listDocuments();
       if (id !== requestId.current) return;
-      setDocuments(data.documents);
+      // Drop rows whose delete has not been confirmed yet, so a poll issued
+      // before the DELETE completed cannot resurrect them.
+      const removed = pendingDeletes.current;
+      setDocuments(
+        removed.size > 0
+          ? data.documents.filter((doc) => !removed.has(doc.id))
+          : data.documents,
+      );
       setError(null);
     } catch (cause) {
       if (id !== requestId.current) return;
@@ -128,18 +143,39 @@ export function useDocuments(): UseDocumentsResult {
   const remove = useCallback(
     async (id: string) => {
       // Optimistic removal keeps the list responsive; a failure restores it.
-      const snapshot = documents;
-      setDocuments((current) => current.filter((doc) => doc.id !== id));
+      //
+      // The rollback re-inserts only this one document rather than restoring a
+      // whole snapshot. Restoring the render-time list overwrote whatever a
+      // concurrent poll or upload had since written, so a failed delete could
+      // discard a document that had just been uploaded.
+      pendingDeletes.current.add(id);
+      setDocuments((current) => {
+        const removed = current.find((doc) => doc.id === id) ?? null;
+        rollbackRef.current.set(id, removed);
+        return current.filter((doc) => doc.id !== id);
+      });
+
       try {
         await deleteDocumentRequest(id);
+        // Any poll response still in flight is now stale; bump the generation so
+        // it is discarded rather than re-adding the row.
+        requestId.current += 1;
+        pendingDeletes.current.delete(id);
       } catch (cause) {
-        setDocuments(snapshot);
+        pendingDeletes.current.delete(id);
+        const removed = rollbackRef.current.get(id) ?? null;
+        rollbackRef.current.delete(id);
+        setDocuments((current) =>
+          removed && !current.some((doc) => doc.id === id)
+            ? [...current, removed]
+            : current,
+        );
         setError(
           cause instanceof ApiError ? cause : new ApiError('Could not delete the document.', 0, true),
         );
       }
     },
-    [documents],
+    [],
   );
 
   const dismissRejection = useCallback(() => setRejection(null), []);

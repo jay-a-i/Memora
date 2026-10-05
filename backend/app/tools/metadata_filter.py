@@ -56,7 +56,11 @@ FILTER_SQL = text(
            count(c.id)       AS chunk_count
     FROM documents d
     LEFT JOIN document_chunks c ON c.document_id = d.id
-    WHERE (:filename IS NULL OR d.filename ILIKE '%' || :filename || '%')
+    -- ESCAPE clause plus replace() in the caller below: without it a
+    -- model-supplied % or _ stayed an active wildcard, so searching for
+    -- "100%" matched every document. The value is still parameter-bound, so
+    -- this is a correctness fix rather than an injection one.
+    WHERE (:filename IS NULL OR d.filename ILIKE '%' || :filename || '%' ESCAPE '\')
       AND (:file_type IS NULL OR d.file_type = :file_type)
       AND (:status IS NULL OR d.status = :status)
     GROUP BY d.id
@@ -80,10 +84,20 @@ async def execute_metadata_filter(
         return [{"error": f"'{status}' is not a valid status."}]
 
     try:
+        # Escapes LIKE metacharacters so the filter matches a literal substring.
+        # The backslash is doubled first, then % and _ are neutralised, which is
+        # the ordering the ESCAPE '\' in the statement expects.
+        escaped_filename = (
+            filename_contains.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+            if filename_contains
+            else None
+        )
         result = await db_session.execute(
             FILTER_SQL,
             {
-                "filename": filename_contains,
+                "filename": escaped_filename,
                 "file_type": file_type.lstrip(".").lower() if file_type else None,
                 "status": status,
                 "limit": MAX_RESULTS,
