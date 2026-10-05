@@ -52,3 +52,40 @@ I'm currently restructuring the project's architecture and folder layout into th
 `db/schema.sql` is the reference DDL. The database is created from it directly
 (pgAdmin, `psql`, or any SQL client) — no code in this repo creates or migrates
 the schema, so changing it means applying the change to your database yourself.
+
+Every statement in it is guarded with `IF NOT EXISTS`, so it is safe to re-run
+against an existing database.
+
+---
+
+## Agent state persistence
+
+The RAG agent keeps its own memory. LangGraph checkpoints the agent state to
+Postgres after every node, keyed by `thread_id`, and the next turn of the same
+conversation resumes from it — so the agent recovers its own prior messages,
+tool calls, and tool results instead of having the endpoint replay them.
+
+- **One conversation = one thread.** `thread_id` is the chat session UUID.
+- **Two stores, two jobs.** `chat_messages` remains the *transcript* the UI
+  reads via `GET /chat/sessions/{id}`. The checkpoint tables are the *agent's
+  working state*. The endpoint writes both.
+- **Tables.** `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`,
+  `checkpoint_migrations`. They are listed in `db/schema.sql`, and
+  `AsyncPostgresSaver.setup()` also creates them on first startup, so applying
+  the schema by hand is optional.
+- **Lifecycle.** The pool is opened by the app lifespan and closed on shutdown,
+  alongside the SQLAlchemy engine dispose.
+- **Turning it off.** `CHECKPOINT_ENABLED=false` reverts to the previous
+  behaviour, where the endpoint replays the stored transcript per request. If the
+  database is unreachable the app logs the reason and falls back automatically
+  rather than refusing to serve.
+
+### Windows note
+
+The checkpointer uses psycopg, whose async support requires a selector-style
+event loop; Windows defaults to `ProactorEventLoop`, which psycopg rejects. The
+app entry point switches the policy to `WindowsSelectorEventLoopPolicy` at
+import, which both psycopg and SQLAlchemy's asyncpg engine support, so no
+configuration is needed. Console scripts that build the saver directly should
+call `asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())`
+first, or expect the manager to log why it disabled itself.

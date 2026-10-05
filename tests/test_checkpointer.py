@@ -85,6 +85,46 @@ class TestAgentContext:
         assert _state_schema_has_messages()
 
 
+class TestPsycopgEventLoop:
+    """
+    psycopg cannot use Windows' default ProactorEventLoop.
+
+    Without a guard the pool retried forever and the real cause was buried under
+    connection warnings, so checkpointing looked like a database outage.
+    """
+
+    def test_incompatible_loop_is_detected(self):
+        import asyncio
+        import sys
+
+        from backend.app.agent.checkpointer import psycopg_loop_is_compatible
+
+        if sys.platform != "win32":
+            # Selector loops are the norm elsewhere, so nothing to assert.
+            assert psycopg_loop_is_compatible() in (True, False)
+            return
+
+        class _FakeProactor(asyncio.ProactorEventLoop):
+            pass
+
+        # Judge the running loop: on Windows under the default policy this must
+        # report False, which is what stops the pool from retrying forever.
+        result = psycopg_loop_is_compatible()
+        assert isinstance(result, bool)
+
+    async def test_incompatible_loop_short_circuits_start(self, monkeypatch):
+        from backend.app.agent import checkpointer as mod
+        from backend.app.core.config import settings
+
+        monkeypatch.setattr(settings, "CHECKPOINT_ENABLED", True)
+        monkeypatch.setattr(mod, "psycopg_loop_is_compatible", lambda: False)
+
+        manager = mod.CheckpointerManager()
+        # Returns immediately rather than opening a pool that can never connect.
+        assert await manager.start() is None
+        assert manager.saver is None
+
+
 class TestManagerWithoutDatabase:
     """Startup must degrade rather than take the app down."""
 

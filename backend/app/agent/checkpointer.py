@@ -30,14 +30,15 @@ the saver at import time would open a connection during module import, which
 breaks tests and any process that imports the app without serving it.
 """
 
+import asyncio
 import logging
+import sys
 from typing import Any
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 
 from backend.app.core.config import settings
-from backend.app.core.errors import client_message
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,39 @@ _ASQLALCHEMY_SCHEMES = (
     "postgresql+psycopg://",
     "postgresql+psycopg2://",
 )
+
+# psycopg's async support requires a selector-style event loop. Windows defaults
+# to ProactorEventLoop, which psycopg rejects outright, so on win32 every
+# connection attempt raises InterfaceError no matter how the DSN is configured.
+# SQLAlchemy's asyncpg engine has the opposite requirement and works fine on
+# Proactor, so this is a psycopg-only constraint and the two drivers genuinely
+# cannot share the default loop on Windows.
+_SELECTOR_LOOP_HINT = (
+    "The LangGraph checkpointer needs a selector-style event loop on Windows "
+    "(psycopg cannot use ProactorEventLoop). Either set CHECKPOINT_ENABLED=false "
+    "to run without agent state persistence, or start the server with "
+    "uvicorn --loop asyncio and a WindowsSelectorEventLoop policy, e.g. via "
+    "asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) "
+    "before uvicorn starts."
+)
+
+
+def psycopg_loop_is_compatible() -> bool:
+    """
+    Reports whether the running loop can drive psycopg's async connections.
+
+    Checked before opening the pool so the failure is a single actionable log
+    line, instead of a retry storm from the pool followed by a generic
+    "internal error" that looks like a database problem.
+    """
+    if sys.platform != "win32":
+        return True
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop yet; the one that starts us will be judged at connect time.
+        return True
+    return not isinstance(loop, asyncio.ProactorEventLoop)
 
 
 def psycopg_dsn(database_url: str) -> str:
@@ -100,6 +134,13 @@ class CheckpointerManager:
             logger.info("LangGraph checkpointing disabled by configuration.")
             return None
 
+        if not psycopg_loop_is_compatible():
+            # Failing fast here rather than letting the pool retry: on Windows
+            # this can never succeed, and the pool's retries buried the real
+            # cause under connection warnings.
+            logger.error("LangGraph checkpointing unavailable. %s", _SELECTOR_LOOP_HINT)
+            return None
+
         if self._saver is not None:
             return self._saver
 
@@ -125,10 +166,16 @@ class CheckpointerManager:
             logger.info("LangGraph Postgres checkpointer ready.")
             return saver
         except Exception as e:
+            # The exception type is logged because it is the part that
+            # distinguishes "database unreachable" from "authentication failed"
+            # or "psycopg cannot use this event loop". This log line stays
+            # server-side only; nothing here is returned to a client.
             logger.error(
-                "Could not start the LangGraph checkpointer; continuing without "
-                "agent state persistence. %s",
-                client_message(e),
+                "Could not start the LangGraph checkpointer (%s: %s); continuing "
+                "without agent state persistence. Agent memory falls back to the "
+                "transcript the endpoint replays per request.",
+                type(e).__name__,
+                e,
             )
             # Leave the half-built pool closed so a later attempt is clean.
             if self._pool is not None:

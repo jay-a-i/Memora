@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -16,6 +18,33 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _prefer_selector_event_loop() -> None:
+    """
+    Switches Windows to a selector loop so psycopg can run.
+
+    The agent's checkpointer talks psycopg3, whose async support refuses
+    Windows' default ProactorEventLoop. SQLAlchemy's asyncpg engine needs
+    Proactor, but only for its own connections -- the two drivers coexist
+    happily on a selector loop, which supports both. Without this, checkpointing
+    silently never starts on Windows.
+
+    A no-op on every other platform, and a no-op if the policy is already set.
+    """
+    if sys.platform != "win32":
+        return
+    policy = asyncio.get_event_loop_policy()
+    if isinstance(policy, getattr(asyncio, "WindowsSelectorEventLoopPolicy", ())):
+        return
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    logger.info(
+        "Switched to WindowsSelectorEventLoopPolicy so the LangGraph "
+        "checkpointer (psycopg) can open connections."
+    )
+
+
+_prefer_selector_event_loop()
 
 
 @asynccontextmanager
