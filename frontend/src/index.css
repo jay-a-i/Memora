@@ -1,0 +1,288 @@
+@import 'tailwindcss';
+
+/*
+ * Monochrome design tokens.
+ *
+ * The whole interface is built from a single grey hue. Every surface, border
+ * and text colour below is the same neutral grey at a different lightness or
+ * opacity -- there is no second hue anywhere in this file, so state changes
+ * (processing / completed / failed) are expressed through border weight,
+ * typography and opacity rather than colour.
+ */
+@theme {
+  --color-grey-0: #ffffff;
+  --color-grey-25: #fbfbfb;
+  --color-grey-50: #f6f6f6;
+  --color-grey-100: #efefef;
+  --color-grey-150: #e6e6e6;
+  --color-grey-200: #dcdcdc;
+  --color-grey-300: #c4c4c4;
+  --color-grey-400: #a3a3a3;
+  --color-grey-500: #808080;
+  --color-grey-600: #666666;
+  --color-grey-700: #4d4d4d;
+  --color-grey-800: #383838;
+  --color-grey-900: #242424;
+  --color-grey-950: #161616;
+
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, Consolas,
+    monospace;
+
+  --radius-panel: 0.5rem;
+
+  --animate-pulse-soft: pulse-soft 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes pulse-soft {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-grey-100);
+    color: var(--color-grey-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* One consistent focus treatment for every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--color-grey-700);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Keyboard focus must never be suppressed; only pointer focus is. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background-color: var(--color-grey-300);
+    color: var(--color-grey-950);
+  }
+
+  /* The page itself never scrolls; only the message list does. */
+  body {
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Slim, monochrome scrollbar. WebKit-only; Firefox falls back to default. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-grey-300) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--color-grey-300);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-grey-400);
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/*
+ * Markdown typography for assistant answers.
+ *
+ * Scoped to .prose-memora and expressed with the grey tokens only, so a code
+ * block or table reads as structure rather than as decoration.
+ */
+.prose-memora {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--color-grey-800);
+  overflow-wrap: break-word;
+}
+
+.prose-memora > * + * {
+  margin-top: 0.85em;
+}
+
+.prose-memora h1,
+.prose-memora h2,
+.prose-memora h3,
+.prose-memora h4 {
+  color: var(--color-grey-950);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.5em;
+  letter-spacing: -0.011em;
+}
+
+.prose-memora h1 {
+  font-size: 1.375rem;
+}
+.prose-memora h2 {
+  font-size: 1.1875rem;
+}
+.prose-memora h3 {
+  font-size: 1.0625rem;
+}
+.prose-memora h4 {
+  font-size: 0.9375rem;
+}
+
+.prose-memora ul,
+.prose-memora ol {
+  padding-left: 1.35em;
+}
+
+.prose-memora ul {
+  list-style-type: disc;
+}
+.prose-memora ol {
+  list-style-type: decimal;
+}
+
+.prose-memora li + li {
+  margin-top: 0.35em;
+}
+
+.prose-memora li::marker {
+  color: var(--color-grey-400);
+}
+
+.prose-memora a {
+  color: var(--color-grey-900);
+  text-decoration: underline;
+  text-decoration-color: var(--color-grey-400);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 120ms ease;
+}
+
+.prose-memora a:hover {
+  text-decoration-color: var(--color-grey-900);
+}
+
+.prose-memora blockquote {
+  border-left: 2px solid var(--color-grey-300);
+  padding-left: 0.9em;
+  color: var(--color-grey-600);
+}
+
+.prose-memora hr {
+  border: 0;
+  border-top: 1px solid var(--color-grey-200);
+  margin-block: 1.5em;
+}
+
+.prose-memora code {
+  font-family: var(--font-mono);
+  font-size: 0.855em;
+  background-color: var(--color-grey-150);
+  border: 1px solid var(--color-grey-200);
+  border-radius: 3px;
+  padding: 0.1em 0.32em;
+  color: var(--color-grey-900);
+}
+
+.prose-memora pre {
+  background-color: var(--color-grey-50);
+  border: 1px solid var(--color-grey-200);
+  border-radius: var(--radius-panel);
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  font-size: 0.855em;
+  line-height: 1.6;
+}
+
+.prose-memora pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+  color: var(--color-grey-800);
+}
+
+.prose-memora table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875em;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose-memora thead {
+  border-bottom: 1px solid var(--color-grey-300);
+}
+
+.prose-memora th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-grey-900);
+  padding: 0.45em 0.75em 0.45em 0;
+  white-space: nowrap;
+}
+
+.prose-memora td {
+  padding: 0.45em 0.75em 0.45em 0;
+  border-bottom: 1px solid var(--color-grey-150);
+  color: var(--color-grey-700);
+  vertical-align: top;
+}
+
+.prose-memora tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Plain-text rendering for user turns; no markdown, tighter rhythm. */
+.prose-user {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: var(--color-grey-900);
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
