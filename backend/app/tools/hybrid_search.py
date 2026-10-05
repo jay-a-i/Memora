@@ -6,13 +6,13 @@ from sqlalchemy import text
 
 from backend.app.core.config import settings
 from backend.app.core.errors import client_message
-from backend.app.services.embeddingV2 import embed_query
+from backend.app.services.embedding import embed_query
 
 logger = logging.getLogger(__name__)
 
 TOP_K = 5
 CANDIDATES = 20
-RRF_K = 60  # Standard RRF damping constant.
+RRF_K = 60 
 
 HYBRID_SEARCH_SCHEMA = {
     "type": "function",
@@ -37,10 +37,6 @@ HYBRID_SEARCH_SCHEMA = {
     },
 }
 
-# Both arms rank independently and are fused with Reciprocal Rank Fusion.
-# `documents` is joined so results carry a human-readable source filename;
-# without it the model cannot produce the [Source X] citations its prompt
-# requires, because it only ever sees a bare UUID.
 HYBRID_SEARCH_SQL = text(
     f"""
     WITH vector_search AS (
