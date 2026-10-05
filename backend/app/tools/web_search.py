@@ -1,10 +1,14 @@
+# backend/app/tools/web_search.py
+
 import asyncio
-from dotenv import load_dotenv
+import logging
+
 from tavily import TavilyClient
 
 from backend.app.core.config import settings
+from backend.app.core.errors import client_message
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 WEB_SEARCH_SCHEMA = {
     "type": "function",
@@ -29,8 +33,12 @@ WEB_SEARCH_SCHEMA = {
     },
 }
 
-api_key = settings.TAVILY_API_KEY
-tavily_client = TavilyClient(api_key=api_key) if api_key else None
+tavily_client = (
+    TavilyClient(api_key=settings.TAVILY_API_KEY) if settings.TAVILY_API_KEY else None
+)
+
+MAX_RESULTS = 5
+MAX_CONTENT_CHARS = 1500  # Raw page text is truncated to bound context growth.
 
 
 async def execute_web_search(query: str, **kwargs) -> dict:
@@ -38,9 +46,15 @@ async def execute_web_search(query: str, **kwargs) -> dict:
     Executes a web search asynchronously using Tavily.
     Accepts **kwargs to safely ingest unneeded parameters like db_session.
     """
+    if not query or not query.strip():
+        return {"error": "Search query was empty."}
+
     if not tavily_client:
         return {
-            "error": "The 'web_search' tool is misconfigured. Missing TAVILY_API_KEY environment variable."
+            "error": (
+                "The 'web_search' tool is unavailable: TAVILY_API_KEY is not set. "
+                "Answer from the knowledge base instead."
+            )
         }
 
     try:
@@ -48,14 +62,25 @@ async def execute_web_search(query: str, **kwargs) -> dict:
             tavily_client.search,
             query=query,
             search_depth="basic",
-            max_results=5
+            max_results=MAX_RESULTS,
         )
-        
-        return {
-            "query": query,
-            "results": response.get("results", [])
-        }
+
+        results = []
+        for item in response.get("results", []):
+            content = (item.get("content") or "")[:MAX_CONTENT_CHARS]
+            results.append(
+                {
+                    "title": item.get("title"),
+                    "url": item.get("url"),
+                    "content": content,
+                }
+            )
+
+        if not results:
+            return {"query": query, "results": [], "note": "No results found."}
+
+        return {"query": query, "results": results}
+
     except Exception as e:
-        return {
-            "error": f"Failed to execute web search: {str(e)}"
-        }
+        logger.exception("Web search failed")
+        return {"error": f"Failed to execute web search: {client_message(e)}"}

@@ -5,6 +5,8 @@ import uuid
 
 from sqlalchemy import text
 
+from backend.app.core.errors import client_message
+
 logger = logging.getLogger(__name__)
 
 MAX_RESULTS = 20
@@ -117,4 +119,4 @@ async def execute_metadata_filter(
 
     except Exception as e:
         logger.exception("Metadata filter failed")
-        return [{"error": f"Metadata filter failed: {e}"}]
+        return [{"error": f"Metadata filter failed: {client_message(e)}"}]

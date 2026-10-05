@@ -1,7 +1,18 @@
 # backend/app/tools/hybrid_search.py
 
+import logging
+
 from sqlalchemy import text
-from backend.app.services.embedding import embed_query
+
+from backend.app.core.config import settings
+from backend.app.core.errors import client_message
+from backend.app.services.embeddingV2 import embed_query
+
+logger = logging.getLogger(__name__)
+
+TOP_K = 5
+CANDIDATES = 20
+RRF_K = 60  # Standard RRF damping constant.
 
 HYBRID_SEARCH_SCHEMA = {
     "type": "function",
@@ -26,58 +37,97 @@ HYBRID_SEARCH_SCHEMA = {
     },
 }
 
+# Both arms rank independently and are fused with Reciprocal Rank Fusion.
+# `documents` is joined so results carry a human-readable source filename;
+# without it the model cannot produce the [Source X] citations its prompt
+# requires, because it only ever sees a bare UUID.
+HYBRID_SEARCH_SQL = text(
+    f"""
+    WITH vector_search AS (
+        SELECT c.document_id,
+               c.chunk_index,
+               c.content,
+               d.filename,
+               row_number() OVER (ORDER BY c.embedding <=> :vector) AS rank
+        FROM document_chunks c
+        JOIN documents d ON d.id = c.document_id
+        WHERE c.embedding IS NOT NULL
+        ORDER BY c.embedding <=> :vector
+        LIMIT :candidates
+    ),
+    fts_search AS (
+        SELECT c.document_id,
+               c.chunk_index,
+               c.content,
+               d.filename,
+               row_number() OVER (
+                   ORDER BY ts_rank_cd(c.fts_content, websearch_to_tsquery('english', :query)) DESC
+               ) AS rank
+        FROM document_chunks c
+        JOIN documents d ON d.id = c.document_id
+        WHERE c.fts_content @@ websearch_to_tsquery('english', :query)
+        ORDER BY ts_rank_cd(c.fts_content, websearch_to_tsquery('english', :query)) DESC
+        LIMIT :candidates
+    )
+    SELECT COALESCE(v.document_id, f.document_id) AS document_id,
+           COALESCE(v.chunk_index, f.chunk_index) AS chunk_index,
+           COALESCE(v.filename, f.filename)       AS source,
+           COALESCE(v.content, f.content)         AS content,
+           COALESCE(1.0 / ({RRF_K} + v.rank), 0.0)
+             + COALESCE(1.0 / ({RRF_K} + f.rank), 0.0) AS rrf_score
+    FROM vector_search v
+    FULL OUTER JOIN fts_search f
+        ON v.document_id = f.document_id AND v.chunk_index = f.chunk_index
+    ORDER BY rrf_score DESC
+    LIMIT :top_k;
+    """
+)
+
+
 async def execute_hybrid_search(query: str, db_session=None, **kwargs) -> list:
     if not db_session:
         return [{"error": "Database session missing. Cannot perform search."}]
-    
+
+    if not query or not query.strip():
+        return [{"error": "Search query was empty."}]
+
     try:
         query_vector = await embed_query(query)
-        
-        #Execute the RRF (Reciprocal Rank Fusion) raw SQL query
-        sql = text("""
-            WITH vector_search AS (
-                SELECT document_id, chunk_index, content, 
-                       RANK() OVER (ORDER BY embedding <=> :vector) as rank
-                FROM document_chunks
-                ORDER BY embedding <=> :vector
-                LIMIT 20
-            ),
-            fts_search AS (
-                SELECT document_id, chunk_index, content, 
-                       RANK() OVER (ORDER BY ts_rank_cd(fts_content, websearch_to_tsquery('english', :query)) DESC) as rank
-                FROM document_chunks
-                WHERE fts_content @@ websearch_to_tsquery('english', :query)
-                LIMIT 20
-            )
-            SELECT COALESCE(v.document_id, f.document_id) as document_id, 
-                   COALESCE(v.chunk_index, f.chunk_index) as chunk_index,
-                   COALESCE(v.content, f.content) as content,
-                   COALESCE(1.0 / (60 + v.rank), 0.0) + COALESCE(1.0 / (60 + f.rank), 0.0) as rrf_score
-            FROM vector_search v
-            FULL OUTER JOIN fts_search f 
-                ON v.document_id = f.document_id AND v.chunk_index = f.chunk_index
-            ORDER BY rrf_score DESC
-            LIMIT 5;
-        """)
-        
-        # pgvector expects vectors as string representations: "[0.1, 0.2, ...]"
-        result = await db_session.execute(sql, {
-            "vector": str(query_vector), 
-            "query": query
-        })
-        
+
+        result = await db_session.execute(
+            HYBRID_SEARCH_SQL,
+            {
+                "vector": str(query_vector),
+                "query": query,
+                "candidates": CANDIDATES,
+                "top_k": TOP_K,
+            },
+        )
+
         rows = result.mappings().all()
-        
-        # Return cleanly formatted dictionaries for the LLM
+
+        if not rows:
+            return [
+                {
+                    "note": (
+                        "No documents in the knowledge base matched this query. "
+                        "Tell the user the knowledge base has no relevant "
+                        "information rather than answering from memory."
+                    )
+                }
+            ]
+
         return [
             {
+                "source": row["source"],
                 "document_id": str(row["document_id"]),
                 "chunk_index": row["chunk_index"],
                 "content": row["content"],
-                "relevance_score": round(row["rrf_score"], 4)
-            } 
+                "relevance_score": round(float(row["rrf_score"]), 4),
+            }
             for row in rows
         ]
-        
+
     except Exception as e:
-        return [{"error": f"Hybrid search failed: {str(e)}"}]
+        logger.exception("Hybrid search failed")
+        return [{"error": f"Hybrid search failed: {client_message(e)}"}]
