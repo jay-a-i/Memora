@@ -1,10 +1,14 @@
 # backend/app/core/config.py
 
 import json
+from pathlib import Path
 from typing import List
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/app/core/config.py -> parents[0]=core, [1]=app, [2]=backend
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -18,7 +22,9 @@ class Settings(BaseSettings):
 
     # --- DATABASE ------------------------------------------------------------
     DATABASE_URL: str
-    DB_ECHO: bool = True  # Log every statement in the terminal if True.
+    # Logs every statement with bound parameters at INFO, which includes
+    # ingested document text and full embedding vectors. Off unless asked for.
+    DB_ECHO: bool = False
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
 
@@ -50,8 +56,20 @@ class Settings(BaseSettings):
     MAX_LLM_CALLS: int = 12
     MAX_HISTORY_MESSAGES: int = 20
 
+    # --- LangGraph checkpointer -------------------------------------------
+    # The agent's own state (message history + tool calls) is checkpointed to
+    # Postgres per conversation, keyed by the chat session UUID as thread_id.
+    # Set to false to fall back to the previous stateless behaviour, where the
+    # caller supplies history on every request.
+    CHECKPOINT_ENABLED: bool = True
+    CHECKPOINT_POOL_SIZE: int = 5
+    CHECKPOINT_TIMEOUT: float = 30.0
+
     model_config = SettingsConfigDict(
-        env_file="app.env",
+        # Absolute: a bare "app.env" resolves against the process working
+        # directory, so starting uvicorn from the repo root silently found no
+        # file and every required key read as missing.
+        env_file=BACKEND_DIR / "app.env",
         extra="ignore",
     )
 
@@ -114,6 +132,39 @@ class Settings(BaseSettings):
                 "default, or set it to a real model id"
             )
         return v
+
+    @field_validator("CHUNK_OVERLAP", "CHUNK_SIZE", "EMBEDDING_BATCH_SIZE",
+                     "INGEST_BATCH_SIZE", "MAX_TOOL_CALLS", "MAX_LLM_CALLS")
+    @classmethod
+    def _reject_non_positive(cls, v: int) -> int:
+        """
+        These feed `range()` steps and loop bounds directly.
+
+        A negative INGEST_BATCH_SIZE makes `range(0, n, -1)` empty, so the
+        pipeline commits COMPLETED with zero chunks and reports success. Zero
+        chunk size is rejected by the splitter. Fail at startup instead of
+        storing an empty index with no error anywhere.
+        """
+        if v <= 0:
+            raise ValueError(f"must be a positive integer (got {v})")
+        return v
+
+    @model_validator(mode="after")
+    def _check_chunk_overlap(self) -> "Settings":
+        """
+        Overlap must stay below chunk size.
+
+        `overlap > chunk_size` raises inside the splitter during ingestion.
+        `overlap == chunk_size` is worse: it raises nothing and produces
+        near-duplicate chunks only, so a mid-sized document produced 9816
+        chunks instead of 68 -- billed and stored at 144x for no new content.
+        """
+        if self.CHUNK_OVERLAP >= self.CHUNK_SIZE:
+            raise ValueError(
+                f"CHUNK_OVERLAP ({self.CHUNK_OVERLAP}) must be less than "
+                f"CHUNK_SIZE ({self.CHUNK_SIZE})"
+            )
+        return self
 
 
 """

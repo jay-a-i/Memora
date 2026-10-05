@@ -1,4 +1,4 @@
-# backend/app/agents/orchestrator.py
+# backend/app/agent/orchestrator.py
 
 """ Neccessary imports. """
 
@@ -7,10 +7,12 @@ import logging
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
+from langgraph.config import get_stream_writer
+from langgraph.runtime import Runtime
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 
-from backend.app.agent.state import AgentState
+from backend.app.agent.state import AgentContext, AgentState
 from backend.app.agent.prompts import AGENT_SYSTEM_PROMPT
 from backend.app.core.config import settings
 from backend.app.core.errors import client_message
@@ -41,7 +43,19 @@ def get_llm():
     return llm
 
 
-async def llm_node(state: AgentState):
+def _session_of(runtime: Runtime | None):
+    """Pulls the request's DB session out of the (unserialized) run context."""
+    if runtime is None:
+        return None
+    context = getattr(runtime, "context", None)
+    if isinstance(context, AgentContext):
+        return context.db_session
+    if isinstance(context, dict):
+        return context.get("db_session")
+    return getattr(context, "db_session", None)
+
+
+async def llm_node(state: AgentState, runtime: Runtime):
     """
     The core LLM node.
     This node passes the current state (conversation history + tool outputs) to the LLM.
@@ -65,17 +79,25 @@ def decision(state: AgentState):
     that dicides whether to perform tool call or llm call.
     """
 
+    last_message = state["messages"][-1]
+    wants_tools = bool(getattr(last_message, "tool_calls", None))
+
+    # The budget only applies while the agent is still working. Checking it
+    # first meant that on the turn the model produced its final answer -- no
+    # tool_calls -- an exhausted counter replaced that answer with the
+    # circuit-breaker apology, so a legitimately long search threw away the
+    # correct response it had just written.
+    if not wants_tools:
+        return END
+
     if (state.get("tool_call_count", 0) >= settings.MAX_TOOL_CALLS
             or state.get("llm_call_count", 0) >= settings.MAX_LLM_CALLS):
         return "circuit_breaker"
 
-    last_message = state["messages"][-1]
-    if getattr(last_message, "tool_calls", None):
-        return "tools"
-    return END
+    return "tools"
 
 
-async def tool_executor(state: AgentState, config: RunnableConfig):
+async def tool_executor(state: AgentState, runtime: Runtime):
     """
     A custom node to execute tools requested by the LLM.
     """
@@ -84,7 +106,17 @@ async def tool_executor(state: AgentState, config: RunnableConfig):
     last_message = messages[-1]
     tool_responses = []
 
-    db_session = (config or {}).get("configurable", {}).get("db_session")
+    db_session = _session_of(runtime)
+
+    # Tools here are plain coroutines rather than BaseTools, so LangChain emits
+    # no on_tool_start/on_tool_end events for them. Emitting the lifecycle
+    # explicitly is what lets the endpoint drop the model's pre-tool narration
+    # and show tool activity in the UI.
+    writer = None
+    try:
+        writer = get_stream_writer()
+    except Exception:
+        writer = None
 
     tool_calls = getattr(last_message, "tool_calls", None) or []
     for tool_call in tool_calls:
@@ -93,6 +125,13 @@ async def tool_executor(state: AgentState, config: RunnableConfig):
         # Some providers omit the id; LangChain requires a non-empty value to
         # pair the ToolMessage with its call.
         tool_call_id = tool_call.get("id") or f"call_{tool_name}"
+
+        if writer is not None:
+            try:
+                writer({"type": "tool_start", "name": tool_name,
+                        "status": f"Running {tool_name}..."})
+            except Exception:
+                logger.debug("Could not emit tool_start for %s", tool_name)
 
         try:
             tool_function = TOOLS_MAP.get(tool_name)
@@ -132,8 +171,16 @@ async def tool_executor(state: AgentState, config: RunnableConfig):
         )
         tool_responses.append(tool_message)
 
+        if writer is not None:
+            try:
+                writer({"type": "tool_end", "name": tool_name})
+            except Exception:
+                logger.debug("Could not emit tool_end for %s", tool_name)
+
     return {
         "messages": tool_responses,
+        # One AIMessage can request several tools, and the cap is expressed in
+        # rounds. Counting the round keeps MAX_TOOL_CALLS meaning what it says.
         "tool_call_count": 1 if tool_responses else 0
     }
 
@@ -155,7 +202,7 @@ def circuit_breaker_node(state: AgentState):
 
 """ Below is the Core Agentic Loop """
 
-workflow = StateGraph(AgentState)
+workflow = StateGraph(AgentState, context_schema=AgentContext)
 
 workflow.add_node("agent", llm_node)
 workflow.add_node("tools", tool_executor)
@@ -178,7 +225,22 @@ workflow.add_conditional_edges(
 workflow.add_edge("tools", "agent")
 workflow.add_edge("circuit_breaker", END) # If the circuit breaker trips, the graph ends immediately.
 
-# No checkpointer: history is supplied by the caller on each request and
-# persisted by the chat endpoint, so the graph stays stateless and does not
-# try to serialize the live db_session carried in config["configurable"].
+# Compiled without a checkpointer here on purpose. The saver owns a connection
+# pool that must be opened by the application lifespan and closed at shutdown,
+# and this module is imported by scripts and tests that never start the app.
+# The lifespan compiles the checkpointed graph and stores it on `app.state`;
+# this remains the stateless fallback for anything running outside the app.
 graph = workflow.compile()
+
+
+def get_graph(checkpointer=None):
+    """
+    Returns the graph to run, checkpointed when a saver is supplied.
+
+    Kept as a function so the saver is bound at request time instead of import
+    time. With no saver this returns the stateless graph, which behaves exactly
+    as the app did before persistence existed.
+    """
+    if checkpointer is None:
+        return graph
+    return workflow.compile(checkpointer=checkpointer)
