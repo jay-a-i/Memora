@@ -193,10 +193,13 @@ async def chat_stream(
     # The DB session travels in `context`, not `configurable`: the checkpointer
     # serializes configurable into the stored checkpoint, and an AsyncSession is
     # neither serializable nor meaningful in a later process.
-    config = {
-        "configurable": {"thread_id": thread_id_for(session_uuid)},
-        "context": AgentContext(db_session=db_session),
-    }
+    #
+    # `context` is a separate top-level argument to astream/ainvoke, NOT a key
+    # inside the config dict. Passing it inside config is silently ignored and
+    # every node then sees Runtime.context as None, which would leave the tools
+    # querying with no session at all.
+    config = {"configurable": {"thread_id": thread_id_for(session_uuid)}}
+    run_context = AgentContext(db_session=db_session)
 
     async def sse_generator() -> AsyncGenerator[str, None]:
         # Text emitted before a tool call is the model narrating ("Let me
@@ -214,6 +217,7 @@ async def chat_stream(
             async for mode, item in runnable.astream(
                 graph_input,
                 config=config,
+                context=run_context,
                 stream_mode=["messages", "custom"],
             ):
                 if mode == "custom":

@@ -58,12 +58,14 @@ export function DocumentItem({ document, onDelete }: DocumentItemProps) {
         )}
       </div>
 
+      {/* pointer-events-none until hover or focus, so the invisible control is not
+          clickable before it is revealed. */}
       <Button
         variant="ghost"
         size="sm"
         onClick={() => onDelete(document)}
         aria-label={`Delete ${document.filename}`}
-        className="h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+        className="pointer-events-none h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         icon={<IconTrash className="h-3.5 w-3.5" />}
       />
     </div>

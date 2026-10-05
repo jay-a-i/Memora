@@ -53,7 +53,7 @@ export interface UseChatResult {
   completedTools: ToolActivity[];
   error: ApiError | null;
   interrupted: boolean;
-  sendMessage: (question: string) => Promise<void>;
+  sendMessage: (question: string, onFailure?: (question: string) => void) => Promise<void>;
   retry: () => Promise<void>;
   stop: () => void;
   reload: () => Promise<void>;
@@ -90,6 +90,17 @@ export function useChat({
 
   const abortRef = useRef<AbortController | null>(null);
   const lastQuestionRef = useRef<string | null>(null);
+  // Mirrors `sending` for the synchronous guard in sendMessage. State updates
+  // do not land until after the current task yields, so a second submit in the
+  // same tick still saw the stale false value.
+  const sendingRef = useRef(false);
+  // The session this hook created during the current send, if any. Creating a
+  // session navigates to /c/<id>, which changes sessionId and re-fires the
+  // history effect below. That fetch would resolve after the stream's own
+  // setMessages (a full HTTP round trip versus a microtask) and replace the
+  // in-progress transcript with the empty history of a brand-new session --
+  // wiping the user's question and dropping every subsequent chunk.
+  const selfCreatedSessionRef = useRef<string | null>(null);
   // Read inside the stream callbacks, which must not re-subscribe on change.
   const onTurnCompleteRef = useRef(onTurnComplete);
   onTurnCompleteRef.current = onTurnComplete;
@@ -99,11 +110,22 @@ export function useChat({
     if (!sessionId) {
       setMessages([]);
       setHistoryError(null);
+      selfCreatedSessionRef.current = null;
+      return;
+    }
+
+    // A session created moments ago by this hook has no stored history yet, and
+    // the turn being streamed lives only in local state. Fetching would discard
+    // it, so the effect is skipped until the id changes again.
+    if (selfCreatedSessionRef.current === sessionId) {
       return;
     }
 
     let cancelled = false;
     setLoadingHistory(true);
+    // Clear immediately so a switch never shows the previous conversation under
+    // the newly selected session's title while the fetch is in flight.
+    setMessages([]);
 
     getSessionHistory(sessionId)
       .then((history) => {
@@ -254,11 +276,15 @@ export function useChat({
   );
 
   const sendMessage = useCallback(
-    async (question: string) => {
+    async (question: string, onFailure?: (question: string) => void) => {
       const trimmed = question.trim();
-      if (!trimmed || sending) return;
+      if (!trimmed || sendingRef.current) return;
 
       lastQuestionRef.current = trimmed;
+      // Closed before the first await. Previously `sending` only became true
+      // inside runStream, after the session-creation round trip, so a second
+      // Enter during that window started a parallel send and a second session.
+      sendingRef.current = true;
 
       // The user turn is rendered immediately; the backend persists it before
       // the stream opens, so the optimistic copy matches stored state.
@@ -268,21 +294,34 @@ export function useChat({
       ]);
 
       try {
+        const wasNewSession = !sessionId;
         const targetSessionId = await ensureSession();
+        if (wasNewSession) {
+          // Tells the history effect that this id's transcript is the local
+          // state built above, not something to be refetched and overwritten.
+          selfCreatedSessionRef.current = targetSessionId;
+        }
         await runStream(trimmed, targetSessionId);
       } catch (cause) {
         const apiError = toApiError(cause, 'Could not start the conversation.');
         // Drop the optimistic user turn; it was never persisted.
         setMessages((current) => current.slice(0, -1));
         setError(apiError);
+        // Hand the text back so the composer can restore it. Otherwise a failed
+        // first send loses the question from both the transcript and the box,
+        // and the user has to retype it.
+        onFailure?.(trimmed);
+      } finally {
+        sendingRef.current = false;
       }
     },
-    [sending, ensureSession, runStream],
+    [ensureSession, runStream, sessionId],
   );
 
   const retry = useCallback(async () => {
     const question = lastQuestionRef.current;
-    if (!question || sending) return;
+    if (!question || sendingRef.current) return;
+    sendingRef.current = true;
 
     // Remove the failed assistant turn; the user question stays because the
     // backend already committed it.
@@ -297,8 +336,10 @@ export function useChat({
       await runStream(question, targetSessionId);
     } catch (cause) {
       setError(toApiError(cause, 'Could not retry the request.'));
+    } finally {
+      sendingRef.current = false;
     }
-  }, [sending, ensureSession, runStream]);
+  }, [ensureSession, runStream]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -306,12 +347,20 @@ export function useChat({
 
   const reload = useCallback(async () => {
     if (!sessionId) return;
-    const history = await getSessionHistory(sessionId);
-    setMessages(
-      history.messages
-        .filter(isRenderable)
-        .map((m) => ({ id: nextId(m.role), role: m.role, content: m.content })),
-    );
+    // Guarded like the other network calls. Previously an awaited failure here
+    // rejected with no handler attached: an unhandled promise rejection in the
+    // console and no change on screen, leaving the stale error on display.
+    try {
+      const history = await getSessionHistory(sessionId);
+      setMessages(
+        history.messages
+          .filter(isRenderable)
+          .map((m) => ({ id: nextId(m.role), role: m.role, content: m.content })),
+      );
+      setHistoryError(null);
+    } catch (cause) {
+      setHistoryError(toApiError(cause, 'Could not reload this conversation.'));
+    }
   }, [sessionId]);
 
   const clearError = useCallback(() => setError(null), []);

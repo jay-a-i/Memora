@@ -42,7 +42,8 @@ export interface UseSessionsResult {
   initialised: boolean;
   refresh: () => Promise<void>;
   createSession: (title?: string) => Promise<ChatSessionDto>;
-  removeSession: (id: string) => Promise<void>;
+  /** Resolves true when the conversation was actually removed. */
+  removeSession: (id: string) => Promise<boolean>;
   restoreLastSession: () => string | null;
   rememberSession: (id: string | null) => void;
 }
@@ -89,20 +90,24 @@ export function useSessions(): UseSessionsResult {
   );
 
   const removeSession = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
       try {
         await deleteSessionRequest(id);
       } catch (cause) {
         // Recorded on the shared error state so the sidebar's existing notice
-        // surfaces it; rethrowing would leave the dialog to handle it too.
+        // surfaces it. The failure is also returned: the caller navigates away
+        // from the conversation on success, and returning void made a failed
+        // delete indistinguishable, dumping the user onto the new-chat screen
+        // with the conversation still in the sidebar.
         setError(
           cause instanceof ApiError
             ? cause
             : new ApiError('Could not delete the conversation.', 0, true),
         );
-        return;
+        return false;
       }
       setSessions((current) => current.filter((s) => s.id !== id));
+      return true;
     },
     [],
   );

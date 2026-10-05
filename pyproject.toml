@@ -1,8 +1,26 @@
+[build-system]
+# Without this, pip falls back to legacy setuptools auto-discovery, which
+# cannot decide what the package is in a flat layout containing both `backend`
+# and `frontend` -- the build failed with "Multiple top-level packages
+# discovered" before a single line of app code was copied.
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Scoped to `backend` so `frontend` is never mistaken for a Python package.
+# An explicit `packages = [...]` list was the obvious fix for the ambiguous
+# flat layout, but most of these directories are namespace packages with no
+# __init__.py, and naming them explicitly makes setuptools fail to build them.
+include = ["backend*"]
+exclude = ["frontend*", "tests*"]
+
 [project]
 name = "memora"
 version = "0.1.0"
 description = "Agentic RAG"
-readme = "README.md"
+# The README lives under backend/, not at the repo root, so the previous path
+# made the build fail on a missing file.
+readme = "backend/README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
@@ -24,6 +42,8 @@ dependencies = [
     "langchain-community",
     "langchain-text-splitters",
     "langgraph",
+    # Persists the agent's state to Postgres, keyed by chat session.
+    "langgraph-checkpoint-postgres>=3.1.2",
     "langchain-tavily>=0.2.18",
     "tavily>=1.1.0",
     # Document parsing
@@ -31,7 +51,6 @@ dependencies = [
     "pymupdf4llm>=1.28.2",
     "pypdf",
     "python-docx>=1.2.0",
-    "pytest>=9.1.1",
     "langchain-cohere>=0.6.0",
     "cohere>=5.21.1",
 ]

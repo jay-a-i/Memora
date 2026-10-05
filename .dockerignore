@@ -1,0 +1,44 @@
+# Build context is the repository root, so this file -- not
+# backend/.dockerignore -- governs what reaches the Docker daemon.
+#
+# Without it, `docker build -f backend/Dockerfile .` shipped backend/app.env
+# (real API keys), .venv/, and frontend/node_modules/ to the daemon and into
+# the build cache, even though backend/.dockerignore excluded them: that file is
+# only consulted when the context IS backend/.
+
+# Secrets. These must never enter an image layer or the build cache.
+**/app.env
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+
+# Frontend: not part of the backend image, and node_modules is enormous.
+frontend/
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Python
+.venv/
+venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pytest_cache/
+**/*.mypy_cache/
+**/*.ruff_cache/
+
+# VCS and tooling
+.git/
+.gitignore
+.github/
+**/.vscode/
+**/.idea/
+**/.DS_Store
+
+# Local state
+**/temp_uploads/
+**/.claude/
+AGENT.md
+**/*.log

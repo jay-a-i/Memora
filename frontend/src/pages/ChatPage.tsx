@@ -85,10 +85,12 @@ export function ChatPage() {
   }
 
   async function handleDeleteSession(session: ChatSessionDto) {
-    await sessions.removeSession(session.id);
-    // removeSession records its own failure on the shared error state, so a
-    // rejected delete leaves the row in place with the reason shown.
-    if (session.id === sessionId) navigate('/', { replace: true });
+    // Navigate only on success. removeSession records its own failure on the
+    // shared error state and now reports it, so a rejected delete keeps the
+    // user in the conversation instead of stranding them on the new-chat
+    // screen with the row still present.
+    const removed = await sessions.removeSession(session.id);
+    if (removed && session.id === sessionId) navigate('/', { replace: true });
   }
 
   async function handleDeleteDocument(document: DocumentDto) {
@@ -198,7 +200,7 @@ export function ChatPage() {
 
         <MessageComposer
           streaming={chat.sending}
-          onSend={(question) => void chat.sendMessage(question)}
+          onSend={(question, onFailure) => void chat.sendMessage(question, onFailure)}
           onStop={chat.stop}
         />
       </main>

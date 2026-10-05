@@ -77,13 +77,20 @@ export function SessionItem({ session, active, onSelect, onDelete }: SessionItem
         </span>
       </button>
 
-      {/* Revealed on hover, but always reachable by keyboard. */}
+      {/*
+        Revealed on hover, but always reachable by keyboard.
+
+        pointer-events-none until hover or focus: `opacity-0` alone left the
+        button fully hit-testable at its absolute position, sitting on top of the
+        row's own select button, so a click on an un-hovered row could open the
+        delete dialog for what looked like a different target.
+      */}
       <Button
         variant="ghost"
         size="sm"
         onClick={() => onDelete(session)}
         aria-label={`Delete conversation: ${label}`}
-        className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+        className="pointer-events-none absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 p-0 opacity-0 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         icon={<IconTrash className="h-3.5 w-3.5" />}
       />
     </div>

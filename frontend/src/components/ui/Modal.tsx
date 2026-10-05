@@ -21,6 +21,13 @@ const FOCUSABLE =
 export function Modal({ open, onClose, title, description, children }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Read through a ref rather than listed as an effect dependency. Call sites
+  // pass an inline arrow, so its identity changed on every parent render; the
+  // effect then re-ran, its cleanup restored focus to the row's trigger, and
+  // the next frame pulled focus back to the first button -- stealing focus
+  // away from the confirm button roughly every time the parent re-rendered.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -39,7 +46,7 @@ export function Modal({ open, onClose, title, description, children }: ModalProp
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -68,7 +75,9 @@ export function Modal({ open, onClose, title, description, children }: ModalProp
       document.body.style.overflow = overflow;
       previouslyFocused.current?.focus?.();
     };
-  }, [open, onClose]);
+    // Keyed on `open` alone: the dialog should set up focus once when it opens
+    // and tear it down once when it closes, not on every parent render.
+  }, [open]);
 
   if (!open) return null;
 

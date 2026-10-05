@@ -13,7 +13,12 @@ import { IconSend } from '../ui/Icon';
 interface MessageComposerProps {
   /** True while a reply is streaming. */
   streaming: boolean;
-  onSend: (question: string) => void;
+  /**
+   * Receives the question and, if the send fails, a callback that restores it.
+   * The box is cleared on submit, so without that callback a failure (a wrong
+   * key, an unreachable backend) discarded the text with nothing to retype from.
+   */
+  onSend: (question: string, onFailure: (question: string) => void) => void;
   onStop: () => void;
 }
 
@@ -22,6 +27,9 @@ const MAX_TEXTAREA_HEIGHT = 200;
 export function MessageComposer({ streaming, onSend, onStop }: MessageComposerProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Read inside the restore callback, which must not close over a stale copy.
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   // Grow with content, then scroll internally once the cap is reached.
   useEffect(() => {
@@ -34,7 +42,13 @@ export function MessageComposer({ streaming, onSend, onStop }: MessageComposerPr
   function submit() {
     const question = value.trim();
     if (!question || streaming) return;
-    onSend(question);
+    onSend(question, (failed) => {
+      // Only restores if the user has not already typed something new.
+      if (valueRef.current.trim() === '') {
+        setValue(failed);
+        textareaRef.current?.focus();
+      }
+    });
     setValue('');
     textareaRef.current?.focus();
   }
