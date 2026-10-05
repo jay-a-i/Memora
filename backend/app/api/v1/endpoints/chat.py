@@ -8,7 +8,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -343,7 +343,8 @@ async def delete_session(
     result = await db.execute(
         select(ChatSession).where(ChatSession.id == session_id)
     )
-    if not result.scalar_one_or_none():
+    session = result.scalar_one_or_none()
+    if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Chat session {session_id} not found.",

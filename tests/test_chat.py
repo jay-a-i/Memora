@@ -180,3 +180,68 @@ def test_request_schema_requires_at_least_one_message():
     except pydantic.ValidationError:
         return
     raise AssertionError("an empty messages list should be rejected")
+
+
+# ------------------------------------------------------------------- delete
+
+
+class _DeleteSession:
+    """A db that returns one row and records what was deleted."""
+
+    def __init__(self, row):
+        self.row = row
+        self.deleted = []
+        self.committed = False
+
+    async def execute(self, *args, **kwargs):
+        return _OneRow(self.row)
+
+    async def delete(self, obj):
+        self.deleted.append(obj)
+
+    async def commit(self):
+        self.committed = True
+
+
+class _OneRow:
+    def __init__(self, row):
+        self._row = row
+
+    def scalar_one_or_none(self):
+        return self._row
+
+
+def test_delete_session_deletes_the_row_it_looked_up():
+    """
+    The lookup result was used only for the 404 check and never bound, so
+    `db.delete(session)` raised NameError and the route 500'd on every
+    existing session. Nothing caught it because no test exercised the route.
+    """
+    from backend.app.api.v1.endpoints.chat import delete_session
+    from backend.app.db.models.chat import ChatSession
+
+    session = ChatSession(id=uuid.uuid4(), title="doomed")
+    db = _DeleteSession(session)
+
+    result = asyncio.run(delete_session(session_id=session.id, db=db, _auth="k"))
+
+    assert result is None
+    assert db.deleted == [session]
+    assert db.committed is True
+
+
+def test_delete_session_404s_when_absent():
+    from fastapi import HTTPException
+
+    from backend.app.api.v1.endpoints.chat import delete_session
+
+    db = _DeleteSession(None)
+
+    try:
+        asyncio.run(delete_session(session_id=uuid.uuid4(), db=db, _auth="k"))
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("a missing session must 404")
+
+    assert db.deleted == [], "nothing should be deleted when the row is absent"

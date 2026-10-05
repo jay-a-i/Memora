@@ -2,6 +2,7 @@
 
 import io
 import os
+import uuid
 
 import pytest
 
@@ -294,6 +295,56 @@ def test_successful_upload_writes_the_file_the_background_task_expects(
     assert r.status_code == 202
     assert os.path.exists(captured["file_path"])
     assert str(r.json()["document_id"]) == str(captured["document_id"])
+
+
+def test_delete_document_deletes_the_row_it_looked_up():
+    """
+    Same shape as the session-delete bug: the lookup result must be bound
+    before it is handed to db.delete().
+    """
+    import asyncio
+    import uuid as _uuid
+
+    from backend.app.api.v1.endpoints.documents import delete_document
+    from backend.app.db.models.document import Document
+
+    document = Document(id=_uuid.uuid4(), filename="a.pdf", file_type="pdf")
+
+    class Session:
+        def __init__(self):
+            self.deleted = []
+            self.committed = False
+
+        async def execute(self, *args, **kwargs):
+            class R:
+                def scalar_one_or_none(self_inner):
+                    return document
+
+            return R()
+
+        async def delete(self, obj):
+            self.deleted.append(obj)
+
+        async def commit(self):
+            self.committed = True
+
+    db = Session()
+    result = asyncio.run(delete_document(document_id=document.id, db=db, _auth="k"))
+
+    assert result is None
+    assert db.deleted == [document]
+    assert db.committed is True
+
+
+def test_delete_routes_are_registered(client):
+    """A route can vanish silently during a refactor; assert it exists."""
+    paths = client.app.openapi()["paths"]
+    for path in (
+        "/api/v1/chat/sessions/{session_id}",
+        "/api/v1/documents/{document_id}",
+    ):
+        methods = {m.lower() for m in paths[path]}
+        assert "delete" in methods, f"{path} has no DELETE route"
 
 
 # ------------------------------------------------------------------ paging
