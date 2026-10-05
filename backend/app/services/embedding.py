@@ -89,7 +89,7 @@ async def embed_documents(
                 embedding_types=["float"],
                 output_dimension=settings.EMBEDDING_DIMENSIONS,
             )
-            all_embeddings.extend(response.embeddings.float)
+            all_embeddings.extend(response.embeddings.float_)
         except Exception as e:
             raise EmbeddingError(
                 f"Embedding request failed for batch {batch_num}/{batches} "
@@ -126,7 +126,7 @@ async def embed_query(query: str) -> List[float]:
             embedding_types=["float"],
             output_dimension=settings.EMBEDDING_DIMENSIONS,
         )
-        vector = response.embeddings.float[0]
+        vector = response.embeddings.float_[0]
     except Exception as e:
         raise EmbeddingError(
             f"Embedding request failed using '{EMBEDDING_MODEL}': {e}"

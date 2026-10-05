@@ -34,6 +34,10 @@ class ChatSessionResponseSchema(BaseModel):
     id: UUID
     title: str
     created_at: datetime
+    # The model carries this and the sidebar renders it as "last activity", but
+    # the response schema omitted it. The frontend typed the field as required,
+    # so every timestamp it showed silently fell back to created_at.
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

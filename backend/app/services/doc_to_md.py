@@ -77,15 +77,97 @@ def doc_to_md(
         return None
 
 
+def _iter_body_blocks(document):
+    """
+    Yields the document body in true reading order.
+
+    `document.paragraphs` and `document.tables` are two independent flat lists
+    with no positional information, so walking one and then the other moved
+    every table to the end of the document. A table under "# Intro" was emitted
+    after "# Appendix", and since chunking splits on headers, that table's chunk
+    was filed under the wrong section -- a metadata error invisible in the
+    stored text.
+
+    Iterating the XML body children preserves the interleaving, because a
+    paragraph and a table are siblings in the same element sequence.
+    """
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    body = document.element.body
+    for child in body.iterchildren():
+        # Skip the section properties element; it carries no content.
+        tag = child.tag.split("}")[-1]
+        if tag == "p":
+            yield _paragraph_to_markdown(Paragraph(child, document))
+        elif tag == "tbl":
+            yield Table(child, document)
+
+
+def _paragraph_to_markdown(para) -> str:
+    """Maps one paragraph onto a Markdown line, honouring headings and lists."""
+    text = para.text.strip()
+    if not text:
+        return ""
+
+    style = (para.style.name or "").lower() if para.style else ""
+    if style.startswith("heading"):
+        level = style.replace("heading", "").strip()
+        if level.isdigit() and 1 <= int(level) <= 6:
+            return f"{'#' * int(level)} {text}"
+        return text
+
+    # Word's list styles carried no marker before, so bulleted and numbered
+    # items were flattened into bare prose and lost their structure cue.
+    if style.startswith("list"):
+        if "number" in style:
+            return f"1. {text}"
+        return f"- {text}"
+
+    return text
+
+
+def _escape_cell(text: str) -> str:
+    """
+    Makes a value safe to place inside a Markdown table cell.
+
+    A raw `|` in the source produced a row with more cells than the header, and
+    an embedded newline split one row across two. Both corrupt the table and
+    cause the splitter to cut through its middle.
+    """
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _table_to_markdown(table) -> list[str]:
+    """Renders one table as a Markdown table block."""
+    rows = [
+        [_escape_cell(cell.text) for cell in row.cells] for row in table.rows
+    ]
+    rows = [r for r in rows if any(cell for cell in r)]
+    if not rows:
+        return []
+
+    width = max(len(r) for r in rows)
+    padded = [r + [""] * (width - len(r)) for r in rows]
+
+    lines = [""]
+    lines.append("| " + " | ".join(padded[0]) + " |")
+    lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
+    for row in padded[1:]:
+        lines.append("| " + " | ".join(row) + " |")
+    lines.append("")
+    return lines
+
+
 def docx_to_md(
     file_path: str,
     output_md: str = "temp_output.md",
 ) -> Dict[str, str] | None:
-    """Converts a .docx file to Markdown, preserving headings and lists.
+    """Converts a .docx file to Markdown, preserving headings, lists and tables.
 
     A .docx is a ZIP archive, so reading it as text would embed compressed
-    binary noise. This extracts the document body and maps Word's paragraph
-    styles onto Markdown headings.
+    binary noise. This walks the document body in order and maps Word's
+    paragraph styles onto Markdown headings and list markers.
 
     Args:
         file_path (str): Path to the source .docx file.
@@ -98,33 +180,11 @@ def docx_to_md(
         document = docx.Document(file_path)
 
         lines: list[str] = []
-        for para in document.paragraphs:
-            text = para.text.strip()
-            if not text:
-                lines.append("")
-                continue
-
-            style = (para.style.name or "").lower() if para.style else ""
-            if style.startswith("heading"):
-                level = style.replace("heading", "").strip()
-                if level.isdigit() and 1 <= int(level) <= 6:
-                    lines.append(f"{'#' * int(level)} {text}")
-                    continue
-
-            lines.append(text)
-
-        for table in document.tables:
-            rows = [
-                [cell.text.strip() for cell in row.cells] for row in table.rows
-            ]
-            if not rows:
-                continue
-            lines.append("")
-            lines.append("| " + " | ".join(rows[0]) + " |")
-            lines.append("| " + " | ".join("---" for _ in rows[0]) + " |")
-            for row in rows[1:]:
-                lines.append("| " + " | ".join(row) + " |")
-            lines.append("")
+        for block in _iter_body_blocks(document):
+            if isinstance(block, str):
+                lines.append(block)
+            else:
+                lines.extend(_table_to_markdown(block))
 
         markdown = "\n\n".join(
             "\n".join(lines).split("\n\n\n")

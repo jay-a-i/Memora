@@ -20,8 +20,12 @@ logger = logging.getLogger(__name__)
 
 class ProcessFile:
 
-    def __init__(self, doc_converter=doc_to_md, chunker=chunk_text, embedder=embed_documents):
+    def __init__(self, doc_converter=doc_to_md, chunker=chunk_text, embedder=embed_documents, docx_converter=docx_to_md):
         self.doc_to_md = doc_converter
+        # Separate seam for .docx. It used to call the module-level docx_to_md
+        # directly, so `doc_converter` had no effect on the .docx path and a
+        # test injecting a fake converter silently exercised the real one.
+        self.docx_to_md = docx_converter
         self.chunk_text = chunker
         self.embed_documents = embedder
 
@@ -96,7 +100,7 @@ class ProcessFile:
                     temp_files_to_clean.append(output_md)
 
                     conversion_result = await asyncio.to_thread(
-                        docx_to_md, file_path, output_md=output_md
+                        self.docx_to_md, file_path, output_md=output_md
                     )
                     if conversion_result is None:
                         raise SafeError(
@@ -122,8 +126,14 @@ class ProcessFile:
                 embeddings = await self.embed_documents(chunk_contents)
 
                 if not embeddings or len(embeddings) != len(chunks):
+                    # Lengths are read into locals first. `not embeddings`
+                    # short-circuits when embeddings is None, and the f-string
+                    # below then called len(None) -- raising TypeError inside
+                    # the handler meant to produce a precise diagnostic, so the
+                    # specific message was lost and a generic one stored.
+                    got = 0 if embeddings is None else len(embeddings)
                     raise SafeError(
-                        f"Embedding count mismatch: {len(embeddings)} embeddings "
+                        f"Embedding count mismatch: {got} embeddings "
                         f"for {len(chunks)} chunks."
                     )
 
@@ -152,6 +162,16 @@ class ProcessFile:
                     db_session.add_all(chunk_records[i : i + db_batch_size])
                     await db_session.flush()
 
+                if not chunk_records:
+                    # A zero-length chunk list reaching here means the batching
+                    # loop below stepped by a non-positive size and silently
+                    # added nothing. Committing COMPLETED would report success
+                    # for a document that can never be searched.
+                    raise SafeError(
+                        "No chunks were produced from this document, so there is "
+                        "nothing to index."
+                    )
+
                 doc.status = DocumentStatus.COMPLETED.value
                 doc.error_message = None
                 await db_session.commit()
@@ -164,7 +184,22 @@ class ProcessFile:
                     f"{len(chunk_records)} chunks created and embedded."
                 )
 
-        except Exception as e:
+        except BaseException as e:
+            # BaseException, not Exception: asyncio.CancelledError derives from
+            # it, so a shutdown or task cancellation mid-ingest skipped the
+            # handler entirely. The `finally` block still deleted the uploaded
+            # file, leaving a row stuck at PROCESSING with nothing behind it and
+            # no reaper to clear it. Marking the failure first and then
+            # re-raising preserves normal exception handling while ensuring
+            # cancellation cannot strand the document.
+            if isinstance(e, asyncio.CancelledError):
+                if document_id:
+                    await self._mark_failed(
+                        document_id,
+                        "Ingestion was cancelled before it completed.",
+                    )
+                raise
+
             # The stored message reaches API clients and the LLM through
             # DocumentResponse and metadata_filter, so only the safe summary is
             # persisted; the traceback stays in the log.

@@ -38,7 +38,12 @@ def chunk_text(file_path: str) -> Optional[List[Document]]:
     Raises:
         OSError: If the file cannot be read.
     """
-    with open(file_path, "r", encoding="utf-8") as f:
+    # errors="replace" so a mis-encoded file degrades instead of failing. .txt is
+    # an accepted upload format, and cp1252/latin-1 is what many Windows and
+    # legacy tools emit; a strict read raised UnicodeDecodeError, which is not a
+    # SafeError, so the document failed with a generic internal-error message
+    # and could not be recovered without re-saving the file by hand.
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
         md_text = f.read()
 
     if not md_text.strip():

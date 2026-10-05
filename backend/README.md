@@ -33,7 +33,7 @@ I'm currently restructuring the project's architecture and folder layout into th
     │   └── services/
     │       ├── doc_to_md.py                 # Convert the Target file to a markdown file
     │       ├── chunking.py                  # Chunk the markdown file
-    │       ├── embeddingV2.py               # Embeddings via Cohere
+    │       ├── embedding.py                 # Embeddings via Cohere
     │       └── ingestion.py                 # Background pipeline logic
     ├── db/
     │   └── schema.sql                       # Reference DDL for the PostgreSQL database

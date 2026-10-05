@@ -6,13 +6,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.agent.checkpointer import thread_id_for
 from backend.app.agent.orchestrator import graph
+from backend.app.agent.state import AgentContext
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.errors import log_and_client_message
@@ -64,12 +66,15 @@ def _build_user_turn(history: list[ChatMessage], question: str) -> HumanMessage:
     else:
         transcript = "(no prior messages)"
 
+    # The live question is escaped too. It was interpolated raw, so a question
+    # containing "</user_query>" closed the frame early and put the rest of the
+    # text outside the one region the prompt's injection defence describes.
     content = (
         "<chat_history>\n"
         f"{transcript}\n"
         "</chat_history>\n\n"
         "<user_query>\n"
-        f"{question}\n"
+        f"{_escape_frame_text(question)}\n"
         "</user_query>"
     )
     return HumanMessage(content=content)
@@ -117,26 +122,32 @@ async def _load_history(
     summary="Stream an agentic RAG answer over SSE",
 )
 async def chat_stream(
-    request: ChatRequestSchema,
+    payload: ChatRequestSchema,
+    request: Request,
     db_session: AsyncSession = Depends(get_db),
     _auth: str = Depends(verify_api_hitter),
 ) -> StreamingResponse:
     """
     Streams the agent's response token-by-token using Server-Sent Events (SSE).
 
-    The session's prior turns are read from PostgreSQL and persisted back, so
-    conversation state survives across requests instead of depending entirely
-    on what the client resends.
+    The agent keeps its own memory: with the Postgres checkpointer enabled,
+    LangGraph restores this conversation's saved state -- prior messages, tool
+    calls and their results -- and resumes from it, so only the new question is
+    sent. Without a checkpointer the endpoint falls back to replaying the
+    stored transcript itself.
+
+    Either way the user and assistant turns are written to `chat_messages`,
+    which is what the transcript endpoint reads.
     """
     try:
-        session_uuid = uuid.UUID(str(request.session_id))
+        session_uuid = uuid.UUID(str(payload.session_id))
     except (ValueError, AttributeError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"'{request.session_id}' is not a valid session UUID.",
+            detail=f"'{payload.session_id}' is not a valid session UUID.",
         )
 
-    question = request.messages[-1].content
+    question = payload.messages[-1].content
     if not question.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -144,9 +155,6 @@ async def chat_stream(
         )
 
     session = await _get_or_create_session(db_session, session_uuid)
-    history = await _load_history(
-        db_session, session_uuid, settings.MAX_HISTORY_MESSAGES
-    )
 
     # Persist the user's turn before streaming, and COMMIT rather than flush.
     # Tools run on this same session, and a failed tool query aborts the
@@ -158,13 +166,36 @@ async def chat_stream(
     )
     await db_session.commit()
 
-    formatted = [_build_user_turn(history, question)]
+    # The runnable is chosen once at startup by the lifespan: the graph
+    # compiled with the Postgres checkpointer when it is available, otherwise
+    # the stateless one. Reading it from app.state (rather than importing
+    # `graph`) is what lets persistence be enabled without a code change.
+    runnable = getattr(request.app.state, "graph", None) or graph
+    checkpointing = bool(getattr(request.app.state, "checkpointing", False))
 
+    # With a checkpointer the thread already holds the conversation, so passing
+    # history again would replay it twice -- duplicated turns in the model's
+    # context and a checkpoint that grows on every request. Only the stateless
+    # fallback still needs the transcript supplied by the caller.
+    if checkpointing:
+        graph_input: dict = {"messages": [HumanMessage(content=question)]}
+    else:
+        history = await _load_history(
+            db_session, session_uuid, settings.MAX_HISTORY_MESSAGES
+        )
+        graph_input = {"messages": [_build_user_turn(history, question)]}
+
+    # `thread_id` is the conversation identity. With a checkpointer, LangGraph
+    # reloads this thread's saved state -- messages, tool calls, tool results --
+    # so the agent resumes with everything it saw in earlier cycles. Only the
+    # new question is passed in; history is no longer re-sent by the caller.
+    #
+    # The DB session travels in `context`, not `configurable`: the checkpointer
+    # serializes configurable into the stored checkpoint, and an AsyncSession is
+    # neither serializable nor meaningful in a later process.
     config = {
-        "configurable": {
-            "db_session": db_session,
-            "thread_id": str(session_uuid),
-        }
+        "configurable": {"thread_id": thread_id_for(session_uuid)},
+        "context": AgentContext(db_session=db_session),
     }
 
     async def sse_generator() -> AsyncGenerator[str, None]:
@@ -175,46 +206,44 @@ async def chat_stream(
         current_parts: list[str] = []
 
         try:
-            async for event in graph.astream_events(
-                {"messages": formatted},
+            # Two stream modes are consumed together: "messages" carries token
+            # deltas from the model, and "custom" carries the tool lifecycle
+            # the tool node writes directly. LangChain's own on_tool_start
+            # events never fire here because these tools are plain coroutines
+            # rather than BaseTools.
+            async for mode, item in runnable.astream(
+                graph_input,
                 config=config,
-                version="v2",
+                stream_mode=["messages", "custom"],
             ):
-                kind = event["event"]
-
-                if kind == "on_chat_model_stream":
-                    chunk = event["data"].get("chunk")
-                    content = getattr(chunk, "content", None)
-                    # Tool-call argument deltas arrive as empty content, so
-                    # empty chunks are skipped rather than forwarded.
-                    if isinstance(content, str) and content:
-                        current_parts.append(content)
-                        yield _sse({"type": "chunk", "content": content})
-                    elif isinstance(content, list) and content:
-                        text = "".join(
-                            part.get("text", "")
-                            for part in content
-                            if isinstance(part, dict)
-                        )
-                        if text:
-                            current_parts.append(text)
-                            yield _sse({"type": "chunk", "content": text})
-
-                elif kind == "on_tool_start":
-                    # Discard anything narrated before the tool call; only the
-                    # final segment (after the last tool) is the real answer.
-                    if current_parts:
+                if mode == "custom":
+                    # Resets the narration buffer: text produced before a tool
+                    # call is the model thinking out loud, not the answer.
+                    if isinstance(item, dict) and item.get("type") == "tool_start":
                         current_parts = []
-                    yield _sse(
-                        {
-                            "type": "tool_start",
-                            "name": event.get("name"),
-                            "status": f"Running {event.get('name')}...",
-                        }
-                    )
+                    if isinstance(item, dict):
+                        yield _sse(item)
+                    continue
 
-                elif kind == "on_tool_end":
-                    yield _sse({"type": "tool_end", "name": event.get("name")})
+                if mode != "messages":
+                    continue
+
+                chunk = item[0] if isinstance(item, tuple) else item
+                content = getattr(chunk, "content", None)
+                # Tool-call argument deltas arrive as empty content, so
+                # empty chunks are skipped rather than forwarded.
+                if isinstance(content, str) and content:
+                    current_parts.append(content)
+                    yield _sse({"type": "chunk", "content": content})
+                elif isinstance(content, list) and content:
+                    text = "".join(
+                        part.get("text", "")
+                        for part in content
+                        if isinstance(part, dict)
+                    )
+                    if text:
+                        current_parts.append(text)
+                        yield _sse({"type": "chunk", "content": text})
 
             answer = "".join(current_parts)
 

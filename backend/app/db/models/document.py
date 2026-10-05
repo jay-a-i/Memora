@@ -72,4 +72,17 @@ class DocumentChunk(Base):
         UniqueConstraint("document_id", "chunk_index", name="uq_chunk_position"),
         Index("idx_chunks_document", "document_id"),
         Index("idx_chunks_fts", "fts_content", postgresql_using="gin"),
+        # Mirrors schema.sql. Its absence here meant anyone creating the schema
+        # from the ORM got a table with no vector index, so hybrid_search's
+        # `<=>` ordering degraded to a full scan on every query.
+        #
+        # `postgresql_ops` names the operator class; the alternative
+        # `postgresql_with={"vector_cosine_ops": ...}` form renders as
+        # `WITH (vector_cosine_ops = ...)`, which Postgres rejects here.
+        Index(
+            "idx_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )

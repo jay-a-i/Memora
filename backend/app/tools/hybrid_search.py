@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from backend.app.core.config import settings
 from backend.app.core.errors import client_message
-from backend.app.services.embeddingV2 import embed_query
+from backend.app.services.embedding import embed_query
 
 logger = logging.getLogger(__name__)
 
