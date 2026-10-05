@@ -94,7 +94,7 @@ def test_dimension_mismatch_is_an_embedding_error():
     """
     from backend.app.core.errors import EmbeddingError, client_message as to_client
 
-    from backend.app.services.embeddingV2 import _validate
+    from backend.app.services.embedding import _validate
 
     with pytest.raises(EmbeddingError) as exc:
         _validate([[0.0] * 768], 1536)

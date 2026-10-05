@@ -12,7 +12,7 @@ from backend.app.core.errors import SafeError, client_message, log_and_client_me
 from backend.app.db.models.document import Document, DocumentChunk
 from backend.app.services.chunking import chunk_text
 from backend.app.services.doc_to_md import doc_to_md, docx_to_md
-from backend.app.services.embeddingV2 import embed_documents
+from backend.app.services.embedding import embed_documents
 from backend.schemas import DocumentStatus
 
 logger = logging.getLogger(__name__)
