@@ -1,14 +1,5 @@
 # backend/app/services/embedding.py
 
-"""
-Embeddings via Cohere.
-
-Cohere is the embedding provider because it is the only one whose model emits
-vectors at the width this project's `vector(1536)` column expects; OpenRouter's
-free embedding models did not offer a matching output dimension. Chat
-completions still go through OpenRouter — the two are unrelated.
-"""
-
 import logging
 from typing import List
 
@@ -19,10 +10,8 @@ from backend.app.core.errors import EmbeddingError
 
 logger = logging.getLogger(__name__)
 
-# Read once at import so every call in a batch names the same model in logs.
 EMBEDDING_MODEL = settings.EMBEDDING_MODEL
 
-# Initialize native Cohere Async Client
 cohere_client = cohere.AsyncClientV2(api_key=settings.COHERE_API_KEY)
 
 
@@ -89,7 +78,7 @@ async def embed_documents(
                 embedding_types=["float"],
                 output_dimension=settings.EMBEDDING_DIMENSIONS,
             )
-            all_embeddings.extend(response.embeddings.float)
+            all_embeddings.extend(response.embeddings.float_)
         except Exception as e:
             raise EmbeddingError(
                 f"Embedding request failed for batch {batch_num}/{batches} "
@@ -126,7 +115,7 @@ async def embed_query(query: str) -> List[float]:
             embedding_types=["float"],
             output_dimension=settings.EMBEDDING_DIMENSIONS,
         )
-        vector = response.embeddings.float[0]
+        vector = response.embeddings.float_
     except Exception as e:
         raise EmbeddingError(
             f"Embedding request failed using '{EMBEDDING_MODEL}': {e}"
