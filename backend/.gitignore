@@ -1,0 +1,33 @@
+# Secrets — never commit these.
+.env
+*.env
+app.env
+.local.env
+
+# Keep the committed template even though *.env is ignored.
+!*.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Application runtime artifacts
+temp_uploads/
+temp_output.md
+temp_image_dir/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+
+#Agent related
+AGENT.md
