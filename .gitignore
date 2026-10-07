@@ -1,13 +1,4 @@
-# Secrets — never commit these.
-.env
-*.env
-app.env
-.local.env
-
-# Keep the committed template even though *.env is ignored.
-!*.env.example
-
-# Python
+#Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -17,9 +8,9 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
-# Application runtime artifacts
+
+#Application runtime artifacts
 temp_uploads/
-temp_output.md
 temp_image_dir/
 
 # Editors / OS
