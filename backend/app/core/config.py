@@ -2,9 +2,14 @@
 
 import json
 from typing import List
+from pathlib import Path
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/app/core/config.py -> parents[0]=core, [1]=app, [2]=backend
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
 
 
 class Settings(BaseSettings):
@@ -49,6 +54,11 @@ class Settings(BaseSettings):
     MAX_TOOL_CALLS: int = 8
     MAX_LLM_CALLS: int = 12
     MAX_HISTORY_MESSAGES: int = 20
+
+    # --- LangGraph checkpointer -------------------------------------------
+    CHECKPOINT_ENABLED: bool = True
+    CHECKPOINT_POOL_SIZE: int = 5
+    CHECKPOINT_TIMEOUT: float = 30.0
 
     model_config = SettingsConfigDict(
         env_file="app.env",
@@ -114,6 +124,59 @@ class Settings(BaseSettings):
                 "default, or set it to a real model id"
             )
         return v
+
+
+    @field_validator("LLM", "EMBEDDING_MODEL", mode="after")
+    @classmethod
+    def _reject_blank_model_id(cls, v: str) -> str:
+        """
+        Guards against an empty model id reaching a provider.
+
+        An `app.env` line like `LLM=""` sets the variable to an empty string,
+        which overrides the default rather than falling back to it. The request
+        then fails at the provider with a message that does not mention
+        configuration, so the cause is easy to miss. Failing at startup names it.
+        """
+        if not v.strip():
+            raise ValueError(
+                "must name a model; remove the line from app.env to use the "
+                "default, or set it to a real model id"
+            )
+        return v
+
+    @field_validator("CHUNK_OVERLAP", "CHUNK_SIZE", "EMBEDDING_BATCH_SIZE",
+                     "INGEST_BATCH_SIZE", "MAX_TOOL_CALLS", "MAX_LLM_CALLS")
+    @classmethod
+    def _reject_non_positive(cls, v: int) -> int:
+        """
+        These feed `range()` steps and loop bounds directly.
+
+        A negative INGEST_BATCH_SIZE makes `range(0, n, -1)` empty, so the
+        pipeline commits COMPLETED with zero chunks and reports success. Zero
+        chunk size is rejected by the splitter. Fail at startup instead of
+        storing an empty index with no error anywhere.
+        """
+        if v <= 0:
+            raise ValueError(f"must be a positive integer (got {v})")
+        return v
+
+    @model_validator(mode="after")
+    def _check_chunk_overlap(self) -> "Settings":
+        """
+        Overlap must stay below chunk size.
+
+        `overlap > chunk_size` raises inside the splitter during ingestion.
+        `overlap == chunk_size` is worse: it raises nothing and produces
+        near-duplicate chunks only, so a mid-sized document produced 9816
+        chunks instead of 68 -- billed and stored at 144x for no new content.
+        """
+        if self.CHUNK_OVERLAP >= self.CHUNK_SIZE:
+            raise ValueError(
+                f"CHUNK_OVERLAP ({self.CHUNK_OVERLAP}) must be less than "
+                f"CHUNK_SIZE ({self.CHUNK_SIZE})"
+            )
+        return self
+
 
 
 """
