@@ -4,8 +4,8 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.app.api.api import api_router
-from backend.app.core.config import settings
+from src.api.api import api_router
+from src.core.config import settings
 
 logging.basicConfig(
     level=logging.INFO,
