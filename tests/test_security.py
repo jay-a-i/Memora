@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.app.core.security import verify_api_hitter
+from backend.src.core.security import verify_api_hitter
 
 
 async def test_valid_key_is_accepted():

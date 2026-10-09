@@ -30,7 +30,7 @@ def test_health_reports_version_and_db(client, auth):
 
 
 def test_health_returns_503_when_db_is_down(client, auth, monkeypatch):
-    import backend.app.api.v1.endpoints.health as health_endpoint
+    import backend.src.api.v1.endpoints.health as health_endpoint
 
     async def unhealthy():
         return {"status": "unhealthy", "database": "disconnected", "error": "refused"}
@@ -110,7 +110,7 @@ def test_upload_rejects_path_traversal_filename(client, auth):
 
 
 def test_upload_rejects_oversized_file(client, auth, monkeypatch):
-    from backend.app.api.v1.endpoints import documents as documents_endpoint
+    from backend.src.api.v1.endpoints import documents as documents_endpoint
 
     monkeypatch.setattr(documents_endpoint.settings, "MAX_UPLOAD_BYTES", 10)
     r = client.post(
@@ -125,7 +125,7 @@ def test_upload_rejects_oversized_file(client, auth, monkeypatch):
 
 
 def test_safe_filename_strips_traversal():
-    from backend.app.api.v1.endpoints.documents import _safe_filename
+    from backend.src.api.v1.endpoints.documents import _safe_filename
 
     # Only the final path component survives, on both separator styles.
     assert _safe_filename("../../evil.md") == "evil.md"
@@ -147,7 +147,7 @@ def test_long_filename_keeps_its_extension(length):
     validated the extension on the full name, so a long .pdf was accepted with
     202 and then failed ingestion with "Unsupported file format".
     """
-    from backend.app.api.v1.endpoints.documents import MAX_FILENAME_LEN, _safe_filename
+    from backend.src.api.v1.endpoints.documents import MAX_FILENAME_LEN, _safe_filename
 
     safe = _safe_filename("a" * (length - 4) + ".pdf")
 
@@ -161,7 +161,7 @@ def test_dotfile_upload_is_rejected_not_silently_broken():
     is refused at the door. Stripping the dot to store it would accept the file
     and then strand it in FAILED forever, which is worse than a 400.
     """
-    from backend.app.api.v1.endpoints.documents import _safe_filename
+    from backend.src.api.v1.endpoints.documents import _safe_filename
 
     for name in [".pdf", "..md", ".txt", "...docx"]:
         assert os.path.splitext(name)[1].lower() not in {".pdf", ".txt", ".md", ".docx"}
@@ -172,7 +172,7 @@ def test_dotfile_upload_is_rejected_not_silently_broken():
 
 def test_hidden_file_with_a_real_extension_survives():
     """.notes.pdf is a real .pdf upload, not a dotfile."""
-    from backend.app.api.v1.endpoints.documents import _safe_filename
+    from backend.src.api.v1.endpoints.documents import _safe_filename
 
     assert os.path.splitext(_safe_filename(".notes.pdf"))[1] == ".pdf"
 
@@ -186,7 +186,7 @@ def test_failed_disk_write_leaves_no_document_row(client, auth, monkeypatch, tmp
     a read-only mount left a permanent PROCESSING row with no file behind it and
     nothing to retry or reap it. The write now happens first.
     """
-    from backend.app.api.v1.endpoints import documents as documents_endpoint
+    from backend.src.api.v1.endpoints import documents as documents_endpoint
 
     monkeypatch.setattr(documents_endpoint.settings, "UPLOAD_DIR", str(tmp_path))
 
@@ -211,7 +211,7 @@ def test_failed_row_insert_removes_the_temp_file(client, auth, monkeypatch, tmp_
     Writing the file first only moves the leak unless the reverse failure also
     cleans up: a row that never commits must not leave its file behind.
     """
-    from backend.app.api.v1.endpoints import documents as documents_endpoint
+    from backend.src.api.v1.endpoints import documents as documents_endpoint
 
     upload_dir = tmp_path / "uploads"
     monkeypatch.setattr(documents_endpoint.settings, "UPLOAD_DIR", str(upload_dir))
@@ -269,7 +269,7 @@ def test_successful_upload_writes_the_file_the_background_task_expects(
     The endpoint passes an explicit document_id to ingestion, so the on-disk name
     only has to be stable — but it must exist by the time the 202 is returned.
     """
-    from backend.app.api.v1.endpoints import documents as documents_endpoint
+    from backend.src.api.v1.endpoints import documents as documents_endpoint
 
     upload_dir = tmp_path / "uploads"
     monkeypatch.setattr(documents_endpoint.settings, "UPLOAD_DIR", str(upload_dir))
@@ -305,8 +305,8 @@ def test_delete_document_deletes_the_row_it_looked_up():
     import asyncio
     import uuid as _uuid
 
-    from backend.app.api.v1.endpoints.documents import delete_document
-    from backend.app.db.models.document import Document
+    from backend.src.api.v1.endpoints.documents import delete_document
+    from backend.src.db.models.document import Document
 
     document = Document(id=_uuid.uuid4(), filename="a.pdf", file_type="pdf")
 
@@ -353,7 +353,7 @@ def test_delete_routes_are_registered(client):
 @pytest.mark.parametrize("limit", [-1, -100, 0, 10**9])
 def test_page_clamp_bounds_both_ends(limit):
     """LIMIT -1 is a SQL error, so a negative limit must not reach the query."""
-    from backend.app.api.v1.endpoints.documents import clamp_page
+    from backend.src.api.v1.endpoints.documents import clamp_page
 
     clamped, offset = clamp_page(limit, 0, 100)
 
@@ -362,7 +362,7 @@ def test_page_clamp_bounds_both_ends(limit):
 
 
 def test_negative_offset_is_clamped():
-    from backend.app.api.v1.endpoints.documents import clamp_page
+    from backend.src.api.v1.endpoints.documents import clamp_page
 
     _, offset = clamp_page(50, -5, 100)
     assert offset >= 0

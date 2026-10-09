@@ -106,7 +106,7 @@ def test_default_dimension_matches_schema_sql_column():
 
 
 def test_orm_column_width_matches_configured_dimensions():
-    from backend.app.db.models.document import DocumentChunk
+    from backend.src.db.models.document import DocumentChunk
 
     column = DocumentChunk.__table__.c.embedding
     assert column.type.dim == _settings().EMBEDDING_DIMENSIONS
@@ -118,7 +118,7 @@ def test_orm_fts_column_mirrors_the_ddl():
     in the ORM would stay NULL and silently disable the keyword half of
     hybrid_search.
     """
-    from backend.app.db.models.document import DocumentChunk
+    from backend.src.db.models.document import DocumentChunk
 
     fts = DocumentChunk.__table__.c.fts_content
     assert fts.computed is not None

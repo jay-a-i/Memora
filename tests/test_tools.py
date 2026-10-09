@@ -3,12 +3,12 @@
 import asyncio
 import uuid
 
-import backend.app.tools.hybrid_search as hs
-from backend.app.tools import TOOLS_MAP, tool_schemas
-from backend.app.tools.doc_inspector import MAX_WINDOW, execute_doc_inspector
-from backend.app.tools.hybrid_search import execute_hybrid_search
-from backend.app.tools.metadata_filter import execute_metadata_filter
-from backend.app.tools.web_search import execute_web_search
+import backend.src.tools.hybrid_search as hs
+from backend.src.tools import TOOLS_MAP, tool_schemas
+from backend.src.tools.doc_inspector import MAX_WINDOW, execute_doc_inspector
+from backend.src.tools.hybrid_search import execute_hybrid_search
+from backend.src.tools.metadata_filter import execute_metadata_filter
+from backend.src.tools.web_search import execute_web_search
 
 
 def run(coro):
@@ -264,7 +264,7 @@ def test_web_search_handles_empty_query():
 
 def test_web_search_truncates_page_text(monkeypatch):
     """Untruncated page text would blow out the context window."""
-    import backend.app.tools.web_search as ws
+    import backend.src.tools.web_search as ws
 
     class FakeClient:
         def search(self, query, search_depth, max_results):

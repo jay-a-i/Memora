@@ -10,7 +10,7 @@ and absolute paths. It reaches API clients through two routes:
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from backend.app.core.errors import SafeError, client_message
+from backend.src.core.errors import SafeError, client_message
 
 # A realistic asyncpg failure: the message names the host, the port, and the
 # credentials, which is exactly what must not cross the boundary.
@@ -65,7 +65,7 @@ def test_safe_errors_pass_through():
 
 
 def test_embedding_failures_name_the_cause_without_the_request():
-    from backend.app.core.errors import EmbeddingError
+    from backend.src.core.errors import EmbeddingError
 
     exc = EmbeddingError(
         "Embedding request failed for batch 2/5 using 'embed-v5.0-pro': "
@@ -79,7 +79,7 @@ def test_embedding_failures_name_the_cause_without_the_request():
 
 def test_embedding_batch_number_is_not_forwarded():
     """Batch counts are internal bookkeeping, not something a user acts on."""
-    from backend.app.core.errors import EmbeddingError
+    from backend.src.core.errors import EmbeddingError
 
     exc = EmbeddingError("Embedding request failed for batch 37/90 using 'x'")
     assert "37" not in client_message(exc)
@@ -92,9 +92,9 @@ def test_dimension_mismatch_is_an_embedding_error():
     stay in the log — but it is a provider-shaped string, so it cannot be a
     SafeError, or it would be returned verbatim.
     """
-    from backend.app.core.errors import EmbeddingError, client_message as to_client
+    from backend.src.core.errors import EmbeddingError, client_message as to_client
 
-    from backend.app.services.embedding import _validate
+    from backend.src.services.embedding import _validate
 
     with pytest.raises(EmbeddingError) as exc:
         _validate([[0.0] * 768], 1536)
@@ -111,7 +111,7 @@ def test_tool_failure_message_is_sanitized_for_the_model():
     """
     import inspect
 
-    from backend.app.agent.orchestrator import tool_executor
+    from backend.src.agent.orchestrator import tool_executor
 
     source = inspect.getsource(tool_executor)
     assert "client_message(e)" in source
@@ -120,7 +120,7 @@ def test_tool_failure_message_is_sanitized_for_the_model():
 
 def test_log_and_client_message_logs_the_detail(caplog):
     """The traceback must still reach the log — that is where it is useful."""
-    from backend.app.core.errors import log_and_client_message
+    from backend.src.core.errors import log_and_client_message
 
     with caplog.at_level("ERROR"):
         message = log_and_client_message(OSError(DSN_LEAK), "Upload failed")

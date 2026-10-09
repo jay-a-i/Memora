@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from langchain_core.documents import Document
 
-from backend.app.services.chunking import chunk_text
-from backend.app.services.doc_to_md import docx_to_md
-from backend.app.services.ingestion import ProcessFile
+from backend.src.services.chunking import chunk_text
+from backend.src.services.doc_to_md import docx_to_md
+from backend.src.services.ingestion import ProcessFile
 
 
 # ---------------------------------------------------------------- chunking
@@ -87,7 +87,7 @@ def test_docx_with_no_text_returns_none(tmp_path):
 
 def test_unreadable_pdf_conversion_returns_none(tmp_path):
     """doc_to_md reports failure rather than raising, so the caller controls it."""
-    from backend.app.services.doc_to_md import doc_to_md
+    from backend.src.services.doc_to_md import doc_to_md
 
     broken = tmp_path / "broken.pdf"
     broken.write_bytes(b"this is not a pdf")
@@ -240,7 +240,7 @@ def test_failed_document_is_marked_failed_on_its_row(tmp_path, stub_ingestion_db
 
 
 def test_successful_ingestion_marks_the_row_completed(tmp_path, stub_ingestion_db):
-    from backend.app.db.models.document import DocumentChunk
+    from backend.src.db.models.document import DocumentChunk
 
     source = tmp_path / "doc.md"
     source.write_text("# t\n\nbody\n", encoding="utf-8")

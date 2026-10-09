@@ -102,7 +102,7 @@ def _make_document_row():
     if _document_row is None:
         import uuid as _uuid
 
-        from backend.app.db.models.document import Document
+        from backend.src.db.models.document import Document
 
         _document_row = Document(
             id=_uuid.uuid4(), filename="doc.md", file_type="md", status="PROCESSING"
@@ -159,7 +159,7 @@ def stub_ingestion_db(monkeypatch, request):
     inspect what ingestion queued. A test that needs the row to be *missing*
     asks for `missing_document_row`.
     """
-    import backend.app.services.ingestion as ingestion_module
+    import backend.src.services.ingestion as ingestion_module
 
     row = None if "missing_document_row" in request.fixturenames else _make_document_row()
     session = _IngestSession(row)
@@ -178,7 +178,7 @@ def missing_document_row(stub_ingestion_db):
 def client(tmp_path_factory):
     """A TestClient whose database and agent calls are stubbed out."""
     from backend.app.core.database import get_db
-    import backend.app.api.v1.endpoints.health as health_endpoint
+    import backend.src.api.v1.endpoints.health as health_endpoint
     from backend.app.core.config import settings
 
     async def healthy():
@@ -190,7 +190,7 @@ def client(tmp_path_factory):
     # rather than the repo's real temp_uploads.
     settings.UPLOAD_DIR = str(tmp_path_factory.mktemp("uploads"))
 
-    from main import app
+    from backend.main import app
 
     app.dependency_overrides[get_db] = StubSession
 

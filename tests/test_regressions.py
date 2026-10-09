@@ -27,7 +27,7 @@ def test_long_filename_keeps_its_extension(length):
     """
     import os.path
 
-    from backend.app.api.v1.endpoints.documents import MAX_FILENAME_LEN, _safe_filename
+    from backend.src.api.v1.endpoints.documents import MAX_FILENAME_LEN, _safe_filename
 
     safe = _safe_filename("a" * (length - 4) + ".pdf")
 
@@ -36,7 +36,7 @@ def test_long_filename_keeps_its_extension(length):
 
 
 def test_safe_filename_still_blocks_traversal():
-    from backend.app.api.v1.endpoints.documents import _safe_filename
+    from backend.src.api.v1.endpoints.documents import _safe_filename
 
     for bad in ["../../evil.md", "a/b/c.pdf", "..\\..\\x.md", "/etc/passwd"]:
         cleaned = _safe_filename(bad)
@@ -45,7 +45,7 @@ def test_safe_filename_still_blocks_traversal():
 
 def test_overlong_extension_does_not_consume_the_whole_budget():
     """A pathological 'extension' longer than the budget must not truncate to ''."""
-    from backend.app.api.v1.endpoints.documents import _safe_filename
+    from backend.src.api.v1.endpoints.documents import _safe_filename
 
     safe = _safe_filename("report" + "." + "x" * 40)
 
@@ -65,7 +65,7 @@ def test_ingestion_never_persists_raw_exception_text(tmp_path, stub_ingestion_db
     """
     import asyncio
 
-    from backend.app.services.ingestion import ProcessFile
+    from backend.src.services.ingestion import ProcessFile
 
     source = tmp_path / "doc.md"
     source.write_text("# t\n\nbody\n", encoding="utf-8")
@@ -97,7 +97,7 @@ def test_ingestion_failure_message_is_actionable(tmp_path, stub_ingestion_db):
 
     from langchain_core.documents import Document
 
-    from backend.app.services.ingestion import ProcessFile
+    from backend.src.services.ingestion import ProcessFile
 
     source = tmp_path / "doc.md"
     source.write_text("# t\n\nbody\n", encoding="utf-8")
@@ -131,7 +131,7 @@ def test_fts_arm_orders_before_limiting():
     surviving rows were arbitrary and their RRF ranks meaningless. The vector
     arm already did this correctly.
     """
-    from backend.app.tools.hybrid_search import HYBRID_SEARCH_SQL
+    from backend.src.tools.hybrid_search import HYBRID_SEARCH_SQL
 
     sql = HYBRID_SEARCH_SQL.text
     fts = sql.split("fts_search AS (")[1]
@@ -176,7 +176,7 @@ def test_chat_stream_error_event_carries_no_internal_detail():
     """
     import inspect
 
-    from backend.app.api.v1.endpoints import chat
+    from backend.src.api.v1.endpoints import chat
 
     source = inspect.getsource(chat.chat_stream)
     assert "client_message" in source or "log_and_client_message" in source
@@ -194,7 +194,7 @@ def test_tool_failure_rolls_back_the_session():
     """
     import inspect
 
-    from backend.app.agent.orchestrator import tool_executor
+    from backend.src.agent.orchestrator import tool_executor
 
     source = inspect.getsource(tool_executor)
     assert "rollback" in source, "tool_executor must recover the transaction"
