@@ -1,4 +1,4 @@
-#Python
+#Python Disposables
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -9,8 +9,9 @@ venv/
 .mypy_cache/
 
 
-#Application runtime artifacts
+# Application runtime artifacts
 temp_uploads/
+temp_output.md
 temp_image_dir/
 
 
