@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import sys
 from typing import Any
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -18,28 +16,12 @@ _ASQLALCHEMY_SCHEMES = (
 
 
 def psycopg_dsn(database_url: str) -> str:
+    #psycopg need encoded db URL
+    database_url = database_url.replace(" ", "%20").replace("(", "%28").replace(")", "%29")
     for scheme in _ASQLALCHEMY_SCHEMES:
         if database_url.startswith(scheme):
             return database_url.replace(scheme, "postgresql://", 1)
     return database_url
-
-
-_SELECTOR_LOOP_HINT = (
-    "The LangGraph checkpointer needs a selector-style event loop on Windows"
-    "(psycopg cannot use ProactorEventLoop), so CHANGING the event loop from ProactorEventLoop"
-    " to selector-style event loop via: "
-    "asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) "
-)
-
-
-def psycopg_loop_is_compatible() -> bool:
-    if sys.platform != "win32":
-        return True
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return True
-    return not isinstance(loop, asyncio.ProactorEventLoop)
 
 
 def thread_id_for(session_id: Any) -> str:
@@ -59,15 +41,7 @@ class CheckpointerManager:
         if not settings.CHECKPOINT_ENABLED:
             logger.info("LangGraph checkpointing disabled by configuration.")
             return None
-
-        if not psycopg_loop_is_compatible():
-            """
-            Below line is deprecated, but safe for a while so it will be
-            upgraded in application's future updates
-            """
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) 
-            logger.info("LangGraph checkpointing unavailable. %s", _SELECTOR_LOOP_HINT)
-
+        
         if self._saver is not None:
             return self._saver
 
