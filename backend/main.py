@@ -50,3 +50,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Internal server error."},
     )
+
+if __name__ == "__main__":
+    import asyncio, uvicorn
+    from uvicorn.loops import asyncio as uvicorn_asyncio
+
+    uvicorn_asyncio.asyncio_loop_factory = (
+        lambda use_subprocess=False: asyncio.SelectorEventLoop()
+    )
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, loop="asyncio")
