@@ -1,4 +1,4 @@
-# backend/app/core/config.py
+# backend/src/core/config.py
 
 import json
 from typing import List
@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# backend/app/core/config.py -> parents[0]=core, [1]=app, [2]=backend
+# backend/app/core/config.py -> parents[0]=core, [1]=src, [2]=backend
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
@@ -55,7 +55,11 @@ class Settings(BaseSettings):
     MAX_LLM_CALLS: int = 12
     MAX_HISTORY_MESSAGES: int = 20
 
-    # --- LangGraph checkpointer -------------------------------------------
+    #--- Tools --------------------------------------------------------------
+    TOOL_CHOICE: str = "auto"
+    PARALLEL_TOO_CALL: bool = True
+
+    # --- LangGraph checkpointer --------------------------------------------
     CHECKPOINT_ENABLED: bool = True
     CHECKPOINT_POOL_SIZE: int = 5
     CHECKPOINT_TIMEOUT: float = 30.0
@@ -177,8 +181,7 @@ class Settings(BaseSettings):
             )
         return self
 
-
-
+    
 """
     Global Singleton.
 """
