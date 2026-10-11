@@ -1,5 +1,6 @@
-# backend/schemas/__init__.py
+# backend/src/schemas/__init__.py
 
+from src.tools import tool_schemas
 from .chat_schemas import (
     MessageRole,
     ChatMessageSchema,
@@ -16,7 +17,6 @@ from .document_schemas import (
     DocumentListResponse,
 )
 from .common_schemas import HealthCheckResponse, ErrorResponse
-from backend.src.tools import tool_schemas
 
 __all__ = [
     "MessageRole",
