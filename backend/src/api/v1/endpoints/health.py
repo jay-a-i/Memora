@@ -1,3 +1,5 @@
+#backend/src/api/v1/endpoints/health.py
+
 import logging
 
 from fastapi import APIRouter, Depends, Response, status
@@ -5,7 +7,7 @@ from fastapi import APIRouter, Depends, Response, status
 from src.core.config import settings
 from src.core.database import check_db_health
 from src.core.security import verify_api_hitter
-from backend.src.schemas.common_schemas import HealthCheckResponse
+from src.schemas.common_schemas import HealthCheckResponse
 
 logger = logging.getLogger(__name__)
 
