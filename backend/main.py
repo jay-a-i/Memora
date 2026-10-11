@@ -56,10 +56,16 @@ if __name__ == "__main__":
     import uvicorn
 
     if sys.platform == "win32":
-        # Windows' defaults to asyncio:ProactorEventLoop which is not compatible
-        # with psycopg (psycopg 3) and throws RuntimeError in runtime,
-        # so changing it to asyncio:Selector-styleEventLoop, so app runs smoothly.
+
+        """
+        Windows defaults to asyncio:ProactorEventLoop which is not compatible
+        with psycopg (psycopg 3) and throws RuntimeError in runtime,
+        so changing it to asyncio:Selector-styleEventLoop, so app runs smoothly.
+        """
+
         uvicorn.run("main:app", host="127.0.0.1", port=8000, loop="asyncio:SelectorEventLoop")
     else:
-        # Linux/Mac defaults to asyncio:Selector-styleEventLoop, so app is already running smoothly.
+        """
+        Linux/Mac defaults to asyncio:Selector-styleEventLoop, so app is already running smoothly.
+        """
         uvicorn.run("main:app", host="127.0.0.1", port=8000)
