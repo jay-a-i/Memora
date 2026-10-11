@@ -52,10 +52,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 if __name__ == "__main__":
-    import asyncio, uvicorn
-    from uvicorn.loops import asyncio as uvicorn_asyncio
+    import sys
+    import uvicorn
 
-    uvicorn_asyncio.asyncio_loop_factory = (
-        lambda use_subprocess=False: asyncio.SelectorEventLoop()
-    )
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, loop="asyncio")
+    if sys.platform == "win32":
+        # Windows' defaults to asyncio:ProactorEventLoop which is not compatible
+        # with psycopg (psycopg 3) and throws RuntimeError in runtime,
+        # so changing it to asyncio:Selector-styleEventLoop, so app runs smoothly.
+        uvicorn.run("main:app", host="127.0.0.1", port=8000, loop="asyncio:SelectorEventLoop")
+    else:
+        # Linux/Mac defaults to asyncio:Selector-styleEventLoop, so app is already running smoothly.
+        uvicorn.run("main:app", host="127.0.0.1", port=8000)
