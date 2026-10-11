@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     CHECKPOINT_TIMEOUT: float = 30.0
 
     model_config = SettingsConfigDict(
-        env_file="app.env",
+        env_file="backend/app.env",
         extra="ignore",
     )
 
