@@ -91,11 +91,8 @@ async def chat_stream(
     The agent keeps its own memory: with the Postgres checkpointer enabled,
     LangGraph restores this conversation's saved state -- prior messages, tool
     calls and their results -- and resumes from it, so only the new question is
-    sent. Without a checkpointer the endpoint falls back to replaying the
-    stored transcript itself.
+    sent.
 
-    Either way the user and assistant turns are written to `chat_messages`,
-    which is what the transcript endpoint reads.
     """
     try:
         session_uuid = uuid.UUID(str(payload.session_id))
@@ -118,7 +115,6 @@ async def chat_stream(
         ChatMessage(session_id=session_uuid, role=MessageRole.USER.value, content=user_msg)
     )
     await db_session.commit()
-
 
     graph = getattr(request.app.state, "graph", None) or get_graph()
     graph_input: dict = {"messages": [HumanMessage(content=user_msg)]}
@@ -178,8 +174,7 @@ async def chat_stream(
         except Exception as e:
             await db_session.rollback()
             yield _sse(
-                {"type": "error", "message": log_and_client_message(e, "Chat stream failed")}
-            )
+                {"type": "error", "message": log_and_client_message(e, "Chat stream failed")})
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(
