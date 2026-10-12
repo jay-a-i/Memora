@@ -1,11 +1,19 @@
+#backend/main.py
+
 import logging
+import sys
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from src.agent.checkpointer import checkpointer_manager
+from src.agent.orchestrator import get_graph
 from src.api.api import api_router
 from src.core.config import settings
+from src.core.database import engine
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,10 +21,55 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from fastapi import FastAPI
+import logging
+
+logger = logging.getLogger("uvicorn.error")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Opens the checkpointer pool at startup and compiles the graph around it.
+    Closes the DB engine cleanly and shutdowns if the checkpointer fails to initialize.
+    """
+    try:
+        saver = await checkpointer_manager.start()        
+        if saver is None:
+            logger.critical("CRITICAL: checkpointer_manager.start() returned None. Persistence is required.")
+            await engine.dispose()
+            raise SystemExit(1)
+            
+    except SystemExit:
+        # Re-raise SystemExit so it isn't swallowed by the generic Exception block below
+        raise
+    except Exception as e:
+        logger.critical(f"CRITICAL: Failed to start checkpointer manager due to error: {e}")
+        try:
+            await engine.dispose()
+        except Exception as dispose_err:
+            logger.error(f"Failed to dispose engine during crash cleanup: {dispose_err}")
+        raise SystemExit(1)
+    
+    app.state.checkpointer = saver
+    logger.info("Checkpointer Initialized")
+    
+    app.state.graph = get_graph(saver)
+    logger.info("Graph Compiled")
+
+    try:
+        logger.info("Backend successfully started.")
+        yield
+    finally:
+        # Standard graceful shutdown when the app stops normally (e.g., Ctrl+C, SIGTERM)
+        await checkpointer_manager.stop()
+        await engine.dispose()
+        logger.info("Shutdown complete; checkpointer pool and DB engine closed.")
+
 
 app = FastAPI(
     title="MEMORA API",
     version=settings.BACKEND_VERSION,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -51,8 +104,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         content={"detail": "Internal server error."},
     )
 
+
 if __name__ == "__main__":
-    import sys
     import uvicorn
 
     if sys.platform == "win32":
