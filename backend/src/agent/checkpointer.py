@@ -38,10 +38,6 @@ class CheckpointerManager:
         return self._saver
 
     async def start(self) -> AsyncPostgresSaver | None:
-        if not settings.CHECKPOINT_ENABLED:
-            logger.info("LangGraph checkpointing disabled by configuration.")
-            return None
-        
         if self._saver is not None:
             return self._saver
 
@@ -50,9 +46,10 @@ class CheckpointerManager:
             pool = AsyncConnectionPool(
                 conninfo=dsn,
                 min_size=1,
-                max_size=settings.CHECKPOINT_POOL_SIZE,
-                timeout=settings.CHECKPOINT_TIMEOUT,
+                max_size=settings.CHECKPOINTER_POOL_SIZE,
+                timeout=settings.CHECKPOINTER_TIMEOUT,
                 open=False,
+                kwargs={"autocommit": True}
             )
             await pool.open(wait=True, timeout=settings.CHECKPOINTER_TIMEOUT)
 
