@@ -60,9 +60,8 @@ class Settings(BaseSettings):
     PARALLEL_TOO_CALL: bool = True
 
     # --- LangGraph checkpointer --------------------------------------------
-    CHECKPOINT_ENABLED: bool = True
-    CHECKPOINT_POOL_SIZE: int = 5
-    CHECKPOINT_TIMEOUT: float = 30.0
+    CHECKPOINTER_POOL_SIZE: int = 5
+    CHECKPOINTER_TIMEOUT: float = 30.0
 
     model_config = SettingsConfigDict(
         env_file="backend/app.env",
