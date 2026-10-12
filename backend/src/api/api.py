@@ -1,8 +1,9 @@
-# backend/app/api/v1/api.py
+# backend/src/api/api.py
 
 from fastapi import APIRouter
+from src.api.v1.endpoints import chat
 from src.api.v1.endpoints import health
-from src.api.v1.endpoints import chat, documents
+from src.api.v1.endpoints import documents
 
 api_router = APIRouter()
 
