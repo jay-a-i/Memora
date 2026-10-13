@@ -230,7 +230,7 @@ workflow.add_edge("tools", "agent")
 workflow.add_edge("circuit_breaker", END) # If the circuit breaker trips, the graph ends immediately.
 
 # Compiled without a checkpointer here on purpose. The saver owns a connection
-# pool that must be opened by the application lifespan and closed at shutdown,
+# pool that must be opened by the application's lifespan and closed at shutdown,
 # and this module is imported by scripts and tests that never start the app.
 # The lifespan compiles the checkpointed graph and stores it on `app.state`;
 # this remains the stateless fallback for anything running outside the app.
@@ -246,5 +246,6 @@ def get_graph(checkpointer=None):
     as the app did before persistence existed.
     """
     if checkpointer is None:
+        logger.warning("Using Statelese Graph")
         return graph
     return workflow.compile(checkpointer=checkpointer)
