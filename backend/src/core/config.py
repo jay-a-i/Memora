@@ -11,7 +11,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
-
 class Settings(BaseSettings):
     """
     Configurations class for the whole project.
@@ -23,7 +22,7 @@ class Settings(BaseSettings):
 
     # --- DATABASE ------------------------------------------------------------
     DATABASE_URL: str
-    DB_ECHO: bool = True  # Log every statement in the terminal if True.
+    DB_ECHO: bool  # Log every statement in the terminal if True.
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
 
@@ -33,9 +32,9 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str | None = None
     APP_API_KEY: str  # Key required to access resources from any api endpoint.
 
-    # --- MODEL ------------------------------------------------------------
-    LLM: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
-    EMBEDDING_MODEL: str = "embed-v5.0-pro"
+    # --- MODELS ------------------------------------------------------------
+    LLM: str
+    EMBEDDING_MODEL: str
 
     # --- EMBEDDING ------------------------------------------------------------
     EMBEDDING_DIMENSIONS: int = 1536
@@ -48,7 +47,7 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
     INGEST_BATCH_SIZE: int = 500
-    EXTRACT_IMAGES: bool = False  # Extracted images are not ingested, so off by default.
+    EXTRACT_IMAGES: bool
 
     # --- Agent ------------------------------------------------------------
     MAX_TOOL_CALLS: int = 8
