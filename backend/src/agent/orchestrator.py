@@ -82,11 +82,7 @@ def decision(state: AgentState):
     wants_tools = bool(getattr(last_message, "tool_calls", None))
     if not wants_tools:
         return END
-
-    if (state.get("tool_call_count", 0) >= settings.MAX_TOOL_CALLS
-            or state.get("llm_call_count", 0) >= settings.MAX_LLM_CALLS):
-        return "circuit_breaker"
-
+    
     return "tools"
 
 
@@ -98,7 +94,7 @@ async def tool_executor(state: AgentState, runtime: Runtime):
     messages = state["messages"]
     last_message = messages[-1]
     tool_responses = []
-
+    tool_call_count_ = 0
     db_session = _session_of(runtime)
 
     writer = None
@@ -147,6 +143,7 @@ async def tool_executor(state: AgentState, runtime: Runtime):
             name=tool_name
         )
         tool_responses.append(tool_message)
+        tool_call_count_ += 1
 
         if writer is not None:
             try:
@@ -156,61 +153,15 @@ async def tool_executor(state: AgentState, runtime: Runtime):
 
     return {
         "messages": tool_responses,
-        "tool_call_count": 1 if tool_responses else 0
+        "tool_call_count": tool_call_count_
     }
-
-
-def circuit_breaker_node(state: AgentState):
-    """
-    Failsafe node when the agent gets stuck in a loop.
-    """
-    messages = state["messages"]
-    answered = {
-        getattr(m, "tool_call_id", None)
-        for m in messages
-        if isinstance(m, ToolMessage)
-    }
-    replies: list[ToolMessage] = []
-    for message in reversed(messages):
-        for call in getattr(message, "tool_calls", None) or []:
-            call_id = call.get("id") or f"call_{call.get('name')}"
-            if call_id in answered:
-                continue
-            answered.add(call_id)
-            replies.append(
-                ToolMessage(
-                    content=json.dumps(
-                        {
-                            "error": (
-                                "Search stopped: the agent reached its step limit "
-                                "before this lookup ran."
-                            )
-                        }
-                    ),
-                    tool_call_id=call_id,
-                    name=call.get("name") or "tool",
-                )
-            )
-    replies.reverse()
-
-    emergency_message = AIMessage(
-        content=(
-            "I apologize, but I had to stop searching because I am stuck in a "
-            "loop or it is taking too many steps. Please try rephrasing your "
-            "question."
-        )
-    )
-    return {"messages": [*replies, emergency_message]}
-
 
 
 """ Below is the Core Agentic Loop """
-
 workflow = StateGraph(AgentState, context_schema=AgentContext)
 
 workflow.add_node("agent", llm_node)
 workflow.add_node("tools", tool_executor)
-workflow.add_node("circuit_breaker", circuit_breaker_node)
 
 # Adding Edges.
 workflow.add_edge(START, "agent")
@@ -221,19 +172,18 @@ workflow.add_conditional_edges(
     decision,
     {
         "tools": "tools",
-        "circuit_breaker": "circuit_breaker",
         END: END
     }
 )
-
 workflow.add_edge("tools", "agent")
-workflow.add_edge("circuit_breaker", END) # If the circuit breaker trips, the graph ends immediately.
 
-# Compiled without a checkpointer here on purpose. The saver owns a connection
-# pool that must be opened by the application's lifespan and closed at shutdown,
-# and this module is imported by scripts and tests that never start the app.
-# The lifespan compiles the checkpointed graph and stores it on `app.state`;
-# this remains the stateless fallback for anything running outside the app.
+"""
+    Compiled without a checkpointer here on purpose. The saver owns a connection
+    pool that must be opened by the application's lifespan and closed at shutdown,
+    and this module is imported by scripts and tests that never start the app.
+    The lifespan compiles the checkpointed graph and stores it on `app.state`;
+    this remains the stateless fallback for anything running outside the app.
+"""
 graph = workflow.compile()
 
 
@@ -246,6 +196,6 @@ def get_graph(checkpointer=None):
     as the app did before persistence existed.
     """
     if checkpointer is None:
-        logger.warning("Using Statelese Graph")
+        logger.critical("Using Statelese Graph")
         return graph
     return workflow.compile(checkpointer=checkpointer)
