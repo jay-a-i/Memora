@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, Response, status
 
 from src.core.config import settings
-from src.core.database import check_db_health
+from src.db.database import check_db_health
 from src.core.security import verify_api_hitter
 from src.schemas.common_schemas import HealthCheckResponse
 

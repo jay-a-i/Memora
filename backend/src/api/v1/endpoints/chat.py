@@ -1,4 +1,4 @@
-# backend/app/v1/endpoints/chat.py
+# backend/src/api/v1/endpoints/chat.py
 
 import json
 import logging
@@ -16,7 +16,7 @@ from src.agent.checkpointer import thread_id_for
 from src.agent.orchestrator import get_graph
 from src.agent.state import AgentContext
 from src.core.config import settings
-from src.core.database import get_db
+from src.db.database import get_db
 from src.core.errors import log_and_client_message
 from src.core.security import verify_api_hitter
 from src.db.models.chat import ChatMessage, ChatSession

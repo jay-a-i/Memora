@@ -12,7 +12,7 @@ from src.agent.checkpointer import checkpointer_manager
 from src.agent.orchestrator import get_graph
 from src.api.api import api_router
 from src.core.config import settings
-from src.core.database import engine
+from src.db.database import engine
 
 
 logging.basicConfig(

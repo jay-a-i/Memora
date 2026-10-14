@@ -1,3 +1,5 @@
+#backend/src/api/v1/endpoints/documents.py
+
 import logging
 import os
 import re
@@ -17,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.core.database import get_db
+from src.db.database import get_db
 from src.core.security import verify_api_hitter
 from src.db.models.document import Document, DocumentChunk
 from src.schemas import (

@@ -1,3 +1,5 @@
+#backend/src/services/ingestion.py
+
 import asyncio
 import logging
 import os
@@ -7,7 +9,7 @@ import uuid
 from sqlalchemy import delete, select
 
 from src.core.config import settings
-from src.core.database import AsyncSessionLocal
+from src.db.database import AsyncSessionLocal
 from src.core.errors import SafeError, client_message, log_and_client_message
 from src.db.models.document import Document, DocumentChunk
 from src.services.chunking import chunk_text
