@@ -3,7 +3,7 @@
 import logging
 import uuid
 
-from sqlalchemy import Integer, String, bindparam, text
+from sqlalchemy import text, bindparam, String
 
 from src.core.errors import client_message
 
