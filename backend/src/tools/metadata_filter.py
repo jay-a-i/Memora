@@ -1,15 +1,14 @@
-# backend/app/tools/metadata_filter.py
+# backend/src/tools/metadata_filter.py
 
 import logging
 import uuid
 
-from sqlalchemy import text
+from sqlalchemy import Integer, String, bindparam, text
 
 from src.core.errors import client_message
 
 logger = logging.getLogger(__name__)
 
-MAX_RESULTS = 20
 VALID_STATUSES = ("PROCESSING", "COMPLETED", "FAILED")
 
 METADATA_FILTER_SCHEMA = {
@@ -44,8 +43,7 @@ METADATA_FILTER_SCHEMA = {
     },
 }
 
-# Identifiers are bound as parameters, never interpolated, so a filename filter
-# cannot alter the shape of the statement.
+
 FILTER_SQL = text(
     """
     SELECT d.id::text        AS document_id,
@@ -53,16 +51,19 @@ FILTER_SQL = text(
            d.file_type,
            d.status,
            d.error_message,
-           count(c.id)       AS chunk_count
+           count(c.id) AS chunk_count
     FROM documents d
     LEFT JOIN document_chunks c ON c.document_id = d.id
     WHERE (:filename IS NULL OR d.filename ILIKE '%' || :filename || '%')
       AND (:file_type IS NULL OR d.file_type = :file_type)
       AND (:status IS NULL OR d.status = :status)
     GROUP BY d.id
-    ORDER BY d.created_at DESC
-    LIMIT :limit;
+    ORDER BY d.created_at DESC;
     """
+).bindparams(
+    bindparam("filename", type_=String()),
+    bindparam("file_type", type_=String()),
+    bindparam("status", type_=String()),
 )
 
 
@@ -86,7 +87,6 @@ async def execute_metadata_filter(
                 "filename": filename_contains,
                 "file_type": file_type.lstrip(".").lower() if file_type else None,
                 "status": status,
-                "limit": MAX_RESULTS,
             },
         )
 
