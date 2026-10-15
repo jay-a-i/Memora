@@ -134,11 +134,9 @@ async def chat_stream(
                 if mode == "custom":
                     if isinstance(item, dict) and item.get("type") == "tool_start":
                         current_parts = []
-                    if isinstance(item, dict):
                         yield _sse(item)
-                    if isinstance(item, dict) and item.get("type") == "tool_end":
+                    elif isinstance(item, dict) and item.get("type") == "tool_end":
                         current_parts = []
-                    if isinstance(item, dict):
                         yield _sse(item)
                     continue
 
