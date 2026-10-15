@@ -136,6 +136,10 @@ async def chat_stream(
                         current_parts = []
                     if isinstance(item, dict):
                         yield _sse(item)
+                    if isinstance(item, dict) and item.get("type") == "tool_end":
+                        current_parts = []
+                    if isinstance(item, dict):
+                        yield _sse(item)
                     continue
 
                 if mode != "messages":
