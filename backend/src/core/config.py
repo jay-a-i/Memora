@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# backend/app/core/config.py -> parents[0]=core, [1]=src, [2]=backend
+# backend/app/core/config.py -> parents[0]=core, parents[1]=src, parents[2]=backend
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
@@ -16,74 +16,91 @@ class Settings(BaseSettings):
     Configurations class for the whole project.
     """
 
-    PROJECT_NAME: str = "MEMORA"
-    BACKEND_VERSION: str = "1.0"
-    CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    PROJECT_NAME: str        # MEMORA
+    BACKEND_VERSION: str 
+    CORS_ORIGINS: List[str]  
 
     # --- DATABASE ------------------------------------------------------------
     DATABASE_URL: str
-    DB_ECHO: bool  # Log every statement in the terminal if True.
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 10
+    DB_ECHO: bool            # Log every statement in the terminal if True.
+    DB_POOL_SIZE: int        
+    DB_MAX_OVERFLOW: int
 
     # --- SECRETS ------------------------------------------------------------
     OPENROUTER_API_KEY: str  # Chat completions, via OpenRouter.
     COHERE_API_KEY: str      # Embeddings, via Cohere.
-    TAVILY_API_KEY: str | None = None
-    APP_API_KEY: str  # Key required to access resources from any api endpoint.
+    TAVILY_API_KEY: str
+    APP_API_KEY: str         # Key required to access resources from any api endpoint.
 
     # --- MODELS ------------------------------------------------------------
     LLM: str
     EMBEDDING_MODEL: str
 
     # --- EMBEDDING ------------------------------------------------------------
-    EMBEDDING_DIMENSIONS: int = 1536
-    EMBEDDING_BATCH_SIZE: int = 32
+    EMBEDDING_DIMENSIONS: int
+    EMBEDDING_BATCH_SIZE: int
 
     # --- Ingestion ------------------------------------------------------------
-    UPLOAD_DIR: str = "temp_uploads"
-    MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024
-    ALLOWED_EXTENSIONS: List[str] = [".pdf", ".txt", ".md", ".docx"]
-    CHUNK_SIZE: int = 1000
-    CHUNK_OVERLAP: int = 200
-    INGEST_BATCH_SIZE: int = 500
+    UPLOAD_DIR: str
+    MAX_UPLOAD_BYTES: int
+    ALLOWED_EXTENSIONS: List[str]
+    CHUNK_SIZE: int
+    CHUNK_OVERLAP: int
+    INGEST_BATCH_SIZE: int
     EXTRACT_IMAGES: bool
 
     # --- Agent ------------------------------------------------------------
-    MAX_TOOL_CALLS: int = 8
-    MAX_LLM_CALLS: int = 12
-    MAX_HISTORY_MESSAGES: int = 20
+    MAX_TOOL_CALLS: int
+    MAX_LLM_CALLS: int
+    MAX_HISTORY_MESSAGES: int
 
     #--- Tools --------------------------------------------------------------
-    TOOL_CHOICE: str = "auto"
-    PARALLEL_TOO_CALL: bool = True
+    TOOL_CHOICE: str
+    PARALLEL_TOOL_CALL: bool
 
     # --- LangGraph checkpointer --------------------------------------------
-    CHECKPOINTER_POOL_SIZE: int = 5
-    CHECKPOINTER_TIMEOUT: float = 30.0
+    CHECKPOINTER_POOL_SIZE: int
+    CHECKPOINTER_TIMEOUT: float
 
     model_config = SettingsConfigDict(
-        env_file="backend/app.env",
+        env_file= BACKEND_DIR / "app.env",
         extra="ignore",
     )
 
+
+    @field_validator("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "EMBEDDING_DIMENSIONS", "EMBEDDING_BATCH_SIZE",
+                     "MAX_UPLOAD_BYTES", "CHUNK_SIZE", "CHUNK_OVERLAP", "INGEST_BATCH_SIZE", "MAX_TOOL_CALLS",
+                     "MAX_LLM_CALLS", "MAX_HISTORY_MESSAGES", "CHECKPOINTER_POOL_SIZE", mode="before")
+    @classmethod
+    def str_to_int(cls, v: str) -> int:
+        if type(v) == str:
+            return int(v.strip())
+        return v
+    
+
+    @field_validator("CHECKPOINTER_TIMEOUT", mode="before")
+    @classmethod
+    def str_to_float(cls, v: str) -> float:
+        if type(v) == str:
+            return float(v.strip())
+        return v
+
     @field_validator("CORS_ORIGINS", "ALLOWED_EXTENSIONS", mode="before")
     @classmethod
-    def _split_csv(cls, v):
+    def _split_csv_to_valid_cors(cls, v):
         """Accept a JSON array, a comma-separated string, or a list."""
         if isinstance(v, str):
             v = v.strip()
             if not v:
                 return []
             if v.startswith("["):
-                # Parsed here rather than returned as a string, because a
-                # str->list field will not coerce the JSON text on its own.
                 try:
                     return json.loads(v)
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Invalid JSON list: {v!r}") from e
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
 
     @field_validator("DATABASE_URL")
     @classmethod
@@ -93,6 +110,7 @@ class Settings(BaseSettings):
         if v.startswith("postgres://"):
             return v.replace("postgres://", "postgresql+asyncpg://", 1)
         return v
+
 
     @model_validator(mode="after")
     def _check_model_credentials(self) -> "Settings":
@@ -109,24 +127,6 @@ class Settings(BaseSettings):
             raise ValueError("COHERE_API_KEY is required for embeddings.")
         return self
 
-    @field_validator("LLM", "EMBEDDING_MODEL", mode="after")
-    @classmethod
-    def _reject_blank_model_id(cls, v: str) -> str:
-        """
-        Guards against an empty model id reaching a provider.
-
-        An `app.env` line like `LLM=""` sets the variable to an empty string,
-        which overrides the default rather than falling back to it. The request
-        then fails at the provider with a message that does not mention
-        configuration, so the cause is easy to miss. Failing at startup names it.
-        """
-        if not v.strip():
-            raise ValueError(
-                "must name a model; remove the line from app.env to use the "
-                "default, or set it to a real model id"
-            )
-        return v
-
 
     @field_validator("LLM", "EMBEDDING_MODEL", mode="after")
     @classmethod
@@ -145,6 +145,7 @@ class Settings(BaseSettings):
                 "default, or set it to a real model id"
             )
         return v
+    
 
     @field_validator("CHUNK_OVERLAP", "CHUNK_SIZE", "EMBEDDING_BATCH_SIZE",
                      "INGEST_BATCH_SIZE", "MAX_TOOL_CALLS", "MAX_LLM_CALLS")
@@ -161,6 +162,7 @@ class Settings(BaseSettings):
         if v <= 0:
             raise ValueError(f"must be a positive integer (got {v})")
         return v
+
 
     @model_validator(mode="after")
     def _check_chunk_overlap(self) -> "Settings":
