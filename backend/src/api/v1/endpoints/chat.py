@@ -13,7 +13,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agent.checkpointer import thread_id_for
-from src.agent.orchestrator import get_graph
 from src.agent.state import AgentContext
 from src.core.config import settings
 from src.db.database import get_db
@@ -116,7 +115,12 @@ async def chat_stream(
     )
     await db_session.commit()
 
-    graph = getattr(request.app.state, "graph", None) or get_graph()
+    graph = getattr(request.app.state, "graph", None)
+
+    if graph == None:
+        raise ValueError("Graph cannont be None")
+    logger.critical("Graph is None")
+    
     graph_input: dict = {"messages": [HumanMessage(content=user_msg)]}
     config = {"configurable": {"thread_id": thread_id_for(session_uuid)}}
     run_context = AgentContext(db_session=db_session)
