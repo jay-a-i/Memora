@@ -60,25 +60,23 @@ class CheckpointerManager:
                     }
             )
             await pool.open(wait=True, timeout=settings.CHECKPOINTER_TIMEOUT)
+            self._pool = pool
 
-            strict_serde = JsonPlusSerializer(allowed_json_modules=[])
+            serde = JsonPlusSerializer(allowed_json_modules=[])
 
             saver = AsyncPostgresSaver(
                 pool=pool,
-                serde=strict_serde
+                serde=serde
             )
             await saver.setup()
-
-            self._pool = pool
+            
             self._saver = saver
             logger.info("LangGraph Postgres checkpointer ready.")
             return saver
         
         except Exception as e:
             logger.error(
-                "Could not start the LangGraph checkpointer (%s: %s); continuing "
-                "without agent state persistence. Agent memory falls back to the "
-                "transcript the endpoint replays per request.",
+                "Could not start the LangGraph checkpointer (%s: %s), thus app boot up failed!",
                 type(e).__name__,
                 e,
             )
