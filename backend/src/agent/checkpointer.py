@@ -7,6 +7,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from psycopg_pool import AsyncConnectionPool
+from psycopg.rows import dict_row
 
 from src.core.config import settings
 
@@ -55,7 +56,7 @@ class CheckpointerManager:
                 open=False,
                 kwargs={
                     "autocommit": True,
-                    "row_factory": "dict_row",
+                    "row_factory": dict_row,
                     }
             )
             await pool.open(wait=True, timeout=settings.CHECKPOINTER_TIMEOUT)
