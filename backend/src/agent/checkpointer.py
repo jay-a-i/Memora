@@ -1,7 +1,11 @@
+#backend/src/agent/checkpointer.py
+
 import logging
 from typing import Any
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
 from psycopg_pool import AsyncConnectionPool
 
 from src.core.config import settings
@@ -49,17 +53,26 @@ class CheckpointerManager:
                 max_size=settings.CHECKPOINTER_POOL_SIZE,
                 timeout=settings.CHECKPOINTER_TIMEOUT,
                 open=False,
-                kwargs={"autocommit": True}
+                kwargs={
+                    "autocommit": True,
+                    "row_factory": "dict_row",
+                    }
             )
             await pool.open(wait=True, timeout=settings.CHECKPOINTER_TIMEOUT)
 
-            saver = AsyncPostgresSaver(pool)
+            strict_serde = JsonPlusSerializer(allowed_json_modules=[])
+
+            saver = AsyncPostgresSaver(
+                pool=pool,
+                serde=strict_serde
+            )
             await saver.setup()
 
             self._pool = pool
             self._saver = saver
             logger.info("LangGraph Postgres checkpointer ready.")
             return saver
+        
         except Exception as e:
             logger.error(
                 "Could not start the LangGraph checkpointer (%s: %s); continuing "
