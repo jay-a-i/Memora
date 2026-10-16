@@ -65,11 +65,11 @@ class CheckpointerManager:
             serde = JsonPlusSerializer(allowed_json_modules=[])
 
             saver = AsyncPostgresSaver(
-                pool=pool,
+                conn=self._pool,
                 serde=serde
             )
             await saver.setup()
-            
+
             self._saver = saver
             logger.info("LangGraph Postgres checkpointer ready.")
             return saver
