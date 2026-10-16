@@ -29,7 +29,7 @@ llm = ChatOpenAI(
 ).bind_tools(
     tools=tool_schemas,
     tool_choice=settings.TOOL_CHOICE,
-    parallel_tool_calls=settings.PARALLEL_TOO_CALL)
+    parallel_tool_calls=settings.PARALLEL_TOOL_CALL)
 
 
 def get_llm():
