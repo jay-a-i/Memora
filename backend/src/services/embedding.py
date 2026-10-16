@@ -30,7 +30,8 @@ def _validate(vectors: List[List[float]], expected: int) -> None:
             f"Embedding dimension mismatch: {EMBEDDING_MODEL} returned "
             f"{width}-dimension vectors but the database column is "
             f"vector({expected}). Set EMBEDDING_DIMENSIONS to {width} (and "
-            f"update schema.sql) or pick a {expected}-dimension model."
+            f"update Database table (document_chunks: embeddings column))"
+            f"or pick a {expected}-dimension model."
         )
 
 
@@ -113,13 +114,12 @@ async def embed_query(query: str) -> List[float]:
             model=EMBEDDING_MODEL,
             input_type="search_query",
             embedding_types=["float"],
-            output_dimension=settings.EMBEDDING_DIMENSIONS,
+            output_dimension=1,
         )
         vector = response.embeddings.float_
     except Exception as e:
         raise EmbeddingError(
             f"Embedding request failed using '{EMBEDDING_MODEL}': {e}"
         ) from e
-
-    _validate([vector], settings.EMBEDDING_DIMENSIONS)
-    return vector
+    _validate(vector, settings.EMBEDDING_DIMENSIONS)
+    return vector[0]
