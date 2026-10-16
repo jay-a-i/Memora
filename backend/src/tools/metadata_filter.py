@@ -3,7 +3,7 @@
 import logging
 import uuid
 
-from sqlalchemy import text, bindparam, String
+from sqlalchemy import text, bindparam, String, Integer
 
 from src.core.errors import client_message
 
@@ -36,6 +36,10 @@ METADATA_FILTER_SCHEMA = {
                     "type": "string",
                     "enum": ["PROCESSING", "COMPLETED", "FAILED"],
                     "description": "Ingestion status to filter on. Omit for all statuses."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of documents to return. Omit to fetch all matching results."
                 }
             },
             "required": [],
@@ -58,12 +62,14 @@ FILTER_SQL = text(
       AND (:file_type IS NULL OR d.file_type = :file_type)
       AND (:status IS NULL OR d.status = :status)
     GROUP BY d.id
-    ORDER BY d.created_at DESC;
+    ORDER BY d.created_at DESC
+    LIMIT CASE WHEN :limit IS NULL THEN ALL ELSE :limit END;
     """
 ).bindparams(
     bindparam("filename", type_=String()),
     bindparam("file_type", type_=String()),
     bindparam("status", type_=String()),
+    bindparam("limit", type_=Integer())
 )
 
 
@@ -72,6 +78,7 @@ async def execute_metadata_filter(
     file_type: str | None = None,
     status: str | None = None,
     db_session=None,
+    limit=None,
     **kwargs
 ) -> list:
     if not db_session:
@@ -87,6 +94,7 @@ async def execute_metadata_filter(
                 "filename": filename_contains,
                 "file_type": file_type.lstrip(".").lower() if file_type else None,
                 "status": status,
+                "limit": limit,
             },
         )
 
