@@ -2,6 +2,8 @@
 
 import logging
 import sys
+import uvicorn
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -105,20 +107,36 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-if __name__ == "__main__":
-    import uvicorn
+def run_server():
+    config = uvicorn.Config(
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        loop="asyncio",
+    )
+    server = uvicorn.Server(config)
 
     if sys.platform == "win32":
-
         """
         Windows defaults to asyncio:ProactorEventLoop which is not compatible
         with psycopg (psycopg 3) and throws RuntimeError in runtime,
         so changing it to asyncio:Selector-styleEventLoop, so app runs smoothly.
         """
-
-        uvicorn.run("main:app", host="127.0.0.1", port=8000, loop="asyncio:SelectorEventLoop")
+        with asyncio.Runner(
+            loop_factory=asyncio.SelectorEventLoop
+        ) as runner:
+            try:
+                runner.run(server.serve())
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                pass
     else:
         """
         Linux/Mac defaults to asyncio:Selector-styleEventLoop, so app is already running smoothly.
         """
-        uvicorn.run("main:app", host="127.0.0.1", port=8000)
+        try:
+            server.serve()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+
+if __name__ == "__main__":
+    run_server()
