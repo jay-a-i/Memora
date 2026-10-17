@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from sqlalchemy import select
@@ -116,11 +116,12 @@ async def chat_stream(
     await db_session.commit()
 
     graph = getattr(request.app.state, "graph", None)
+    if graph is None:
+        raise HTTPException(
+                status_code=status.HTTP_502_NOT_FOUND,
+                detail=f"Graph is None",
+            )
 
-    if graph == None:
-        raise ValueError("Graph cannont be None")
-    logger.critical("Graph is None")
-    
     graph_input: dict = {"messages": [HumanMessage(content=user_msg)]}
     config = {"configurable": {"thread_id": thread_id_for(session_uuid)}}
     run_context = AgentContext(db_session=db_session)
@@ -272,6 +273,7 @@ async def get_session_history(
 )
 async def delete_session(
     session_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _auth: str = Depends(verify_api_hitter),
 ):
@@ -286,6 +288,11 @@ async def delete_session(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Chat session {session_id} not found.",
         )
+
+    checkpointer = request.app.state.checkpointer
+    await checkpointer.adelete_thread(thread_id_for(session_id))
+
     await db.delete(session)
     await db.commit()
+
     return None
