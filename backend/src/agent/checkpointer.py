@@ -57,35 +57,43 @@ class CheckpointerManager:
                 kwargs={
                     "autocommit": True,
                     "row_factory": dict_row,
-                    }
+                    },
             )
-            await pool.open(wait=True, timeout=settings.CHECKPOINTER_TIMEOUT)
-            self._pool = pool
 
-            serde = JsonPlusSerializer(allowed_json_modules=[])
+            await pool.open(
+                wait=True, 
+                timeout=settings.CHECKPOINTER_TIMEOUT
+            )
+
+            serde = JsonPlusSerializer(
+                allowed_json_modules=[],
+                allowed_msgpack_modules=None,
+            )
 
             saver = AsyncPostgresSaver(
-                conn=self._pool,
+                conn=pool,
                 serde=serde
             )
             await saver.setup()
 
+            self._pool = pool
             self._saver = saver
-            logger.info("LangGraph Postgres checkpointer ready.")
             return saver
         
         except Exception as e:
             logger.error(
-                "Could not start the LangGraph checkpointer (%s: %s), thus app boot up failed!",
+                "Could not start the LangGraph checkpointer (%s: %s), app boot up failed!",
                 type(e).__name__,
                 e,
             )
-            if self._pool is not None:
+
+            if pool is not None:
                 try:
-                    await self._pool.close()
+                    await pool.close()
                 except Exception:
-                    logger.warning("Could not close the checkpointer pool cleanly.")
-                self._pool = None
+                    logger.warning("Failed to close the checkpointer pool cleanly.")
+
+            self._pool = None
             self._saver = None
             return None
 
@@ -101,8 +109,3 @@ class CheckpointerManager:
 
 
 checkpointer_manager = CheckpointerManager()
-
-async def get_checkpointer() -> AsyncPostgresSaver | None:
-    if checkpointer_manager.saver is None:
-        await checkpointer_manager.start()
-    return checkpointer_manager.saver
