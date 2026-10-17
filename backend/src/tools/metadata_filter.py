@@ -39,7 +39,7 @@ METADATA_FILTER_SCHEMA = {
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of documents to return. Omit to fetch all matching results."
+                    "description": "Maximum number of documents to return. Omit to fetch the minimum 100 matching results."
                 }
             },
             "required": [],
@@ -63,7 +63,7 @@ FILTER_SQL = text(
       AND (:status IS NULL OR d.status = :status)
     GROUP BY d.id
     ORDER BY d.created_at DESC
-    LIMIT CASE WHEN :limit IS NULL THEN ALL ELSE :limit END;
+    LIMIT :limit;
     """
 ).bindparams(
     bindparam("filename", type_=String()),
@@ -78,7 +78,7 @@ async def execute_metadata_filter(
     file_type: str | None = None,
     status: str | None = None,
     db_session=None,
-    limit=None,
+    limit: int | None = 100,
     **kwargs
 ) -> list:
     if not db_session:
