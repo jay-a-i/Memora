@@ -1,4 +1,4 @@
-# backend/app/schemas/chat_schemas.py
+# backend/src/schemas/chat_schemas.py
 
 from datetime import datetime
 from enum import Enum
@@ -17,13 +17,23 @@ class MessageRole(str, Enum):
 class ChatMessageSchema(BaseModel):
     role: MessageRole
     content: str
+    turn_id: str
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class ChatRequestSchema(BaseModel):
     session_id: str = Field(..., description="Unique UUID or thread ID for the chat session")
-    messages: List[ChatMessageSchema] = Field(..., min_length=1, description="List of messages in conversation")
+    messages: List[ChatMessageSchema] = Field(..., min_length=1)
+    turn_id: str = Field(                      
+        ...,
+        max_length=64,
+        description=(
+            "Stable client-generated ID for this logical turn. "
+            "Reuse on automatic retries; generate a new one when the "
+            "user edits the question or retries manually."
+        ),
+    )
 
 
 class ChatSessionCreateSchema(BaseModel):
