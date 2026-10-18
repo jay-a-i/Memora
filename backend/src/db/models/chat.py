@@ -1,4 +1,4 @@
-# backend/app/db/models/chat.py
+# backend/src/db/models/chat.py
 
 import uuid
 from datetime import datetime, timezone
@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -39,7 +40,6 @@ class ChatSession(Base):
         back_populates="session",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        # `seq` is the authoritative order; created_at can tie on coarse clocks.
         order_by="ChatMessage.seq",
     )
 
@@ -57,13 +57,18 @@ class ChatMessage(Base):
     )
     role = Column(String(50), nullable=False)  # 'user', 'assistant', 'system', 'tool'
     content = Column(Text, nullable=False)
+    
+    turn_id = Column(String(64), nullable=False)
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    # Monotonic insertion order, assigned by the database. Timestamps alone are
-    # not enough: Windows clocks have ~15.6ms granularity, so a user message and
-    # its assistant reply routinely share a created_at, and ordering by id
-    # instead would sort random UUIDv4 values — correct only ~50% of the time.
     seq = Column(BigInteger, Identity(always=True), nullable=False, unique=True)
 
     session = relationship("ChatSession", back_populates="messages")
 
-    __table_args__ = (Index("idx_chat_messages_session", "session_id", "seq"),)
+    __table_args__ = (
+        Index("idx_chat_messages_session", "session_id", "seq"),
+        UniqueConstraint(
+            "session_id", "turn_id", "role",
+            name="uq_chat_messages_session_turn_role",
+        ),
+    )
