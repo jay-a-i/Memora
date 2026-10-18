@@ -1,4 +1,7 @@
+-- updated --
+
 CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title VARCHAR(255) DEFAULT 'New Chat',
@@ -11,10 +14,12 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
     role VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
+    turn_id VARCHAR(64) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    seq BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE
+    seq BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+    CONSTRAINT uq_chat_messages_session_turn_role
+        UNIQUE (session_id, turn_id, role)
 );
-
 
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -41,7 +46,6 @@ CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_documents_created ON documents(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
-CREATE INDEX idx_chunks_embedding ON document_chunks 
-USING hnsw (embedding vector_cosine_ops);
-
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON document_chunks
+    USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_chunks_fts ON document_chunks USING gin (fts_content);
