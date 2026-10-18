@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
-from sqlalchemy import select
+from sqlalchemy import select, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agent.checkpointer import thread_id_for
@@ -74,6 +74,47 @@ async def _load_history(
     return messages
 
 
+async def _claim_user_turn(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    turn_id: str,
+    content: str,
+) -> bool:
+    stmt = (
+        insert(ChatMessage)
+        .values(
+            session_id=session_id,
+            role=MessageRole.USER.value,
+            content=content,
+            turn_id=turn_id,
+        )
+        .on_conflict_do_nothing(constraint="uq_chat_messages_session_turn_role")
+        .returning(ChatMessage.id)
+    )
+    inserted_id = (await db.execute(stmt)).scalar_one_or_none()
+    await db.commit()
+    return inserted_id is not None
+
+
+async def _store_assistant_turn(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    turn_id: str,
+    content: str,
+) -> None:
+    stmt = (
+        insert(ChatMessage)
+        .values(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT.value,
+            content=content,
+            turn_id=turn_id,
+        )
+        .on_conflict_do_nothing(constraint="uq_chat_messages_session_turn_role")
+    )
+    await db.execute(stmt)
+
+
 @router.post(
     "/stream",
     summary="Stream an agentic RAG answer over SSE",
@@ -92,6 +133,10 @@ async def chat_stream(
     calls and their results -- and resumes from it, so only the new question is
     sent.
 
+    Idempotency: the client should send a stable `turn_id` per logical turn.
+    A retry that reuses the same `turn_id` receives 409 and never re-enters
+    the graph, so no duplicate user message is persisted and no duplicate
+    HumanMessage is appended to the checkpointed thread state.
     """
     try:
         session_uuid = uuid.UUID(str(payload.session_id))
@@ -106,23 +151,35 @@ async def chat_stream(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The messages input cannot be empty",
         )
-    
+
     user_msg = payload.messages[-1].content
     session = await _get_or_create_session(db_session, session_uuid)
-    
-    db_session.add(
-        ChatMessage(session_id=session_uuid, role=MessageRole.USER.value, content=user_msg)
+
+    # ---- Idempotency gate: MUST happen before graph.astream ----
+    is_new_turn = await _claim_user_turn(
+        db_session, session_uuid, payload.turn_id, user_msg,
     )
-    await db_session.commit()
+    if not is_new_turn:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This turn has already been submitted for this session. "
+                "Reuse the stored response via GET /sessions/{session_id}, "
+                "or generate a new turn_id to send a new turn."
+            ),
+        )
 
     graph = getattr(request.app.state, "graph", None)
     if graph is None:
         raise HTTPException(
-                status_code=status.HTTP_502_NOT_FOUND,
-                detail=f"Graph is None",
-            )
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Graph is None",
+        )
 
-    graph_input: dict = {"messages": [HumanMessage(content=user_msg)]}
+    message_id = payload.turn_id or str(uuid.uuid4())
+    graph_input: dict = {
+        "messages": [HumanMessage(content=user_msg, id=message_id)]
+    }
     config = {"configurable": {"thread_id": thread_id_for(session_uuid)}}
     run_context = AgentContext(db_session=db_session)
 
@@ -165,12 +222,8 @@ async def chat_stream(
 
             answer = "".join(current_parts)
 
-            db_session.add(
-                ChatMessage(
-                    session_id=session_uuid,
-                    role=MessageRole.ASSISTANT.value,
-                    content=answer,
-                )
+            await _store_assistant_turn(
+                db_session, session_uuid, payload.turn_id, answer,
             )
             session.updated_at = datetime.now(timezone.utc)
             await db_session.commit()
@@ -181,7 +234,8 @@ async def chat_stream(
         except Exception as e:
             await db_session.rollback()
             yield _sse(
-                {"type": "error", "message": log_and_client_message(e, "Chat stream failed")})
+                {"type": "error", "message": log_and_client_message(e, "Chat stream failed")}
+            )
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -190,7 +244,6 @@ async def chat_stream(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            # Stops nginx from buffering the stream into a single response.
             "X-Accel-Buffering": "no",
         },
     )
@@ -262,7 +315,8 @@ async def get_session_history(
     return ChatHistoryResponseSchema(
         session_id=session_id,
         messages=[
-            ChatMessageSchema(role=m.role, content=m.content) for m in messages]
+            ChatMessageSchema(role=m.role, content=m.content, turn_id=m.turn_id,
+                ) for m in messages]
         )
 
 
