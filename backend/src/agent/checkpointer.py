@@ -21,7 +21,6 @@ _ASQLALCHEMY_SCHEMES = (
 
 
 def psycopg_dsn(database_url: str) -> str:
-    #psycopg need encoded db URL
     database_url = database_url.replace(" ", "%20").replace("(", "%28").replace(")", "%29")
     for scheme in _ASQLALCHEMY_SCHEMES:
         if database_url.startswith(scheme):
@@ -46,8 +45,11 @@ class CheckpointerManager:
         if self._saver is not None:
             return self._saver
 
-        dsn = psycopg_dsn(settings.DATABASE_URL)
+        pool: AsyncConnectionPool | None = None
+        
         try:
+            dsn = psycopg_dsn(settings.DATABASE_URL)
+
             pool = AsyncConnectionPool(
                 conninfo=dsn,
                 min_size=1,
@@ -79,24 +81,20 @@ class CheckpointerManager:
             self._pool = pool
             self._saver = saver
             return saver
-        
-        except Exception as e:
-            logger.error(
-                "Could not start the LangGraph checkpointer (%s: %s), app boot up failed!",
-                type(e).__name__,
-                e,
-            )
+     
+        except Exception:
+            logger.exception("Failed to initialize the LangGraph Postgres checkpointer.")
 
             if pool is not None:
                 try:
                     await pool.close()
                 except Exception:
-                    logger.warning("Failed to close the checkpointer pool cleanly.")
+                    logger.exception("Failed to close the checkpointer pool.")
 
             self._pool = None
             self._saver = None
-            return None
 
+        return None
     async def stop(self) -> None:
         """Closes the pool. Safe to call when startup failed or never ran."""
         if self._pool is not None:
