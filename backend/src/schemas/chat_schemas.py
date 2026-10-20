@@ -27,11 +27,11 @@ class ChatRequestSchema(BaseModel):
     messages: List[ChatMessageSchema] = Field(..., min_length=1)
     turn_id: str = Field(                      
         ...,
+        min_length=1,
         max_length=64,
         description=(
-            "Stable client-generated ID for this logical turn. "
-            "Reuse on automatic retries; generate a new one when the "
-            "user edits the question or retries manually."
+            "Stable client-generated ID for one user turn. "
+            "Reuse it when retrying the turn"
         ),
     )
 
