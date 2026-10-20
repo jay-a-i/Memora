@@ -117,11 +117,11 @@ def run_server():
     server = uvicorn.Server(config)
 
     if sys.platform == "win32":
-        """
-        Windows defaults to asyncio:ProactorEventLoop which is not compatible
-        with psycopg (psycopg 3) and throws RuntimeError in runtime,
-        so changing it to asyncio:Selector-styleEventLoop, so app runs smoothly.
-        """
+      
+        # Psycopg's async connections require a SelectorEventLoop on Windows.
+        # Runner lets us choose the event-loop factory without using the
+        # deprecated asyncio event-loop policy mechanism.
+        
         with asyncio.Runner(
             loop_factory=asyncio.SelectorEventLoop
         ) as runner:
@@ -130,11 +130,11 @@ def run_server():
             except (KeyboardInterrupt, asyncio.CancelledError):
                 pass
     else:
-        """
-        Linux/Mac defaults to asyncio:Selector-styleEventLoop, so app is already running smoothly.
-        """
+        
+        # Uvicorn manages its own event loop
+       
         try:
-            server.serve()
+            server.run()
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
 
