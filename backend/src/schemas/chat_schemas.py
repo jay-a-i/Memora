@@ -1,10 +1,9 @@
-# backend/src/schemas/chat_schemas.py
-
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageRole(str, Enum):
@@ -12,6 +11,11 @@ class MessageRole(str, Enum):
     ASSISTANT = "assistant"
     SYSTEM = "system"
     TOOL = "tool"
+
+
+class ChatMessageInputSchema(BaseModel):
+    role: MessageRole
+    content: str = Field(max_length=20_000)
 
 
 class ChatMessageSchema(BaseModel):
@@ -23,15 +27,16 @@ class ChatMessageSchema(BaseModel):
 
 
 class ChatRequestSchema(BaseModel):
-    session_id: str = Field(..., description="Unique UUID or thread ID for the chat session")
-    messages: List[ChatMessageSchema] = Field(..., min_length=1)
-    turn_id: str = Field(                      
+    session_id: str
+    messages: List[ChatMessageInputSchema] = Field(min_length=1)
+
+    turn_id: str = Field(
         ...,
         min_length=1,
         max_length=64,
         description=(
-            "Stable client-generated ID for one user turn. "
-            "Reuse it when retrying the turn"
+            "Stable ID for one logical user turn. "
+            "Reuse it when retrying that turn."
         ),
     )
 
