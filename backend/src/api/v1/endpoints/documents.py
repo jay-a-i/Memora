@@ -27,7 +27,7 @@ from src.schemas import (
     DocumentUploadResponse,
 )
 from src.services.ingestion import ProcessFile
-from src.helper import (
+from src.api.api_helper import (
     _safe_filename, 
     _discard_partial_upload, 
     clamp_page,

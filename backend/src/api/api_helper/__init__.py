@@ -1,4 +1,3 @@
-from .agent_helper import _checkpoint_answer_for_turn
 
 from .chat_api_helper import (
     _claim_user_turn,
@@ -7,6 +6,7 @@ from .chat_api_helper import (
     _get_or_create_session,
     _load_history,
     get_session_lock,
+    _checkpoint_answer_for_turn,
     )
 
 from .doc_api_helper import (
