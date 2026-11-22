@@ -4,22 +4,14 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-WORKDIR /app
+WORKDIR /backend
 
-# Build deps for psycopg/pymupdf wheels; removed from the final layer.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Dependency metadata is copied on its own so the (slow) dependency layer is
-# reused whenever only application code changes.
 COPY pyproject.toml uv.lock ./
-RUN pip install --upgrade pip && pip install .
+RUN uv sync -update
 
-COPY main.py ./
+COPY server.py /backend
 COPY backend ./backend
 
-# Writable location for uploads processed in the background.
 RUN mkdir -p /app/temp_uploads
 
 EXPOSE 8000

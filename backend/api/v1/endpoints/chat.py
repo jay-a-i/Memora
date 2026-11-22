@@ -224,13 +224,19 @@ async def chat_stream(
     """
     try:
         session_uuid = uuid.UUID(str(payload.session_id))
+
+        session_lock = get_session_lock(str(session_uuid))
+        await session_lock.acquire()
+
     except (ValueError, AttributeError, TypeError):
+        session_lock.release()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'{payload.session_id}' is not a valid session UUID.",
         )
 
     if not payload.messages or not payload.messages[-1].content.strip():
+        session_lock.release()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The messages input cannot be empty",
@@ -241,6 +247,7 @@ async def chat_stream(
 
     graph = getattr(request.app.state, "graph", None)
     if graph is None:
+        session_lock.release()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Graph is None",
@@ -290,6 +297,8 @@ async def chat_stream(
     if existing_user is not None:
         # Reusing a turn ID with different content is invalid.
         if existing_user.content != user_msg:
+            
+            session_lock.release()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This turn ID has already been used for different content.",
@@ -306,6 +315,7 @@ async def chat_stream(
                 last_checkpointed_user is None
                 or last_checkpointed_user.id != payload.turn_id
             ):
+                session_lock.release()
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
@@ -350,6 +360,7 @@ async def chat_stream(
                 }
 
             else:
+                session_lock.release()
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
@@ -377,6 +388,8 @@ async def chat_stream(
         )
 
         if not is_new_turn:
+
+            session_lock.release()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="This turn has already been submitted.",
@@ -400,10 +413,7 @@ async def chat_stream(
                     "content": replay_answer,
                 })
 
-            yield _sse({
-                "type": "done",
-                "session_id": str(session_uuid),
-            })
+            yield _sse({"type": "done", "session_id": str(session_uuid),})
             yield "data: [DONE]\n\n"
             
             return
@@ -463,6 +473,9 @@ async def chat_stream(
                 {"type": "error", "message": log_and_client_message(e, "Chat stream failed")}
             )
             yield "data: [DONE]\n\n"
+
+        finally:
+            session_lock.release()
 
     return StreamingResponse(
         sse_generator(),

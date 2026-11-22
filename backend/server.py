@@ -1,5 +1,3 @@
-#backend/main.py
-
 import logging
 import sys
 import uvicorn
@@ -15,14 +13,19 @@ from api import router
 from core import settings
 from db import engine
 
+log_format = logging.Formatter("%(asctime)s | %(levelname)s | [%(filename)s] | %(message)s")
+console_handler = logging.StreamHandler()
+file_handler = logging.FileHandler("app.log", mode="a", encoding="utf-8")
+console_handler.setFormatter(log_format)
+file_handler.setFormatter(log_format)
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    handlers=[console_handler, file_handler]
 )
+
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger("uvicorn.error")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,7 +41,6 @@ async def lifespan(app: FastAPI):
             raise SystemExit(1)
             
     except SystemExit:
-        # Re-raise SystemExit so it isn't swallowed by the generic Exception block below
         raise
     except Exception as e:
         logger.critical(f"CRITICAL: Failed to start checkpointer manager due to error: {e}")
@@ -58,7 +60,6 @@ async def lifespan(app: FastAPI):
         logger.info("Backend successfully started.")
         yield
     finally:
-        # Standard graceful shutdown when the app stops normally (e.g., Ctrl+C, SIGTERM)
         await checkpointer_manager.stop()
         await engine.dispose()
         logger.info("Shutdown complete; checkpointer pool and DB engine closed.")
@@ -105,7 +106,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 def run_server():
     config = uvicorn.Config(
-        "main:app",
+        "server:app",
         host="127.0.0.1",
         port=8000,
         loop="asyncio",
@@ -113,11 +114,6 @@ def run_server():
     server = uvicorn.Server(config)
 
     if sys.platform == "win32":
-      
-        # Psycopg's async connections require a SelectorEventLoop on Windows.
-        # Runner lets us choose the event-loop factory without using the
-        # deprecated asyncio event-loop policy mechanism.
-        
         with asyncio.Runner(
             loop_factory=asyncio.SelectorEventLoop
         ) as runner:
@@ -126,9 +122,6 @@ def run_server():
             except (KeyboardInterrupt, asyncio.CancelledError):
                 pass
     else:
-        
-        # Uvicorn manages its own event loop
-       
         try:
             server.run()
         except (KeyboardInterrupt, asyncio.CancelledError):

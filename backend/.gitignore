@@ -11,3 +11,5 @@ app.env
 temp_uploads/
 temp_output.md
 temp_image_dir/
+
+app.log
