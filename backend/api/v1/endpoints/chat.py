@@ -572,21 +572,27 @@ async def delete_session(
     _auth: str = Depends(verify_api_hitter),
 ):
     """Deletes a session; its messages cascade."""
-    
-    result = await db.execute(
-        select(ChatSession).where(ChatSession.id == session_id)
-    )
-    session = result.scalar_one_or_none()
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Chat session {session_id} not found.",
+
+    lock = get_session_lock(str(session_id))
+
+    async with lock:
+        result = await db.execute(
+            select(ChatSession).where(ChatSession.id == session_id)
         )
 
-    checkpointer = request.app.state.checkpointer
-    await checkpointer.adelete_thread(thread_id_for(session_id))
+        session = result.scalar_one_or_none()
 
-    await db.delete(session)
-    await db.commit()
+        if not session:
+            lock.release()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Chat session {session_id} not found.",
+            )
+
+        checkpointer = request.app.state.checkpointer
+        await checkpointer.adelete_thread(thread_id_for(session_id))
+
+        await db.delete(session)
+        await db.commit()
 
     return None
