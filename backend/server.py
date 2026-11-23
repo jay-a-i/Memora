@@ -15,7 +15,7 @@ from db import engine
 
 log_format = logging.Formatter("%(asctime)s | %(levelname)s | [%(filename)s] | %(message)s")
 console_handler = logging.StreamHandler()
-file_handler = logging.FileHandler("app.log", mode="a", encoding="utf-8")
+file_handler = logging.FileHandler(filename="app_logs.log", mode="a", encoding="utf-8")
 console_handler.setFormatter(log_format)
 file_handler.setFormatter(log_format)
 
