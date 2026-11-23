@@ -57,3 +57,4 @@ class ChatSessionResponseSchema(BaseModel):
 class ChatHistoryResponseSchema(BaseModel):
     session_id: UUID
     messages: List[ChatMessageSchema]
+    next_before_seq: int | None = None
