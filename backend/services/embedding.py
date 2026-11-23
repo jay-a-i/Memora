@@ -111,7 +111,7 @@ async def embed_query(query: str) -> List[float]:
             model=EMBEDDING_MODEL,
             input_type="search_query",
             embedding_types=["float"],
-            output_dimension=1,
+            output_dimension=1536,
         )
         vector = response.embeddings.float_
     except Exception as e:
