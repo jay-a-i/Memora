@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     MAX_TOOL_CALLS: int
     MAX_LLM_CALLS: int
     MAX_HISTORY_MESSAGES: int
+    MAX_CONTEXT_TOKENS: int
 
     #--- Tools --------------------------------------------------------------
     TOOL_CHOICE: str
