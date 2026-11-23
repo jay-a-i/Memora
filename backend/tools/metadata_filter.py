@@ -37,7 +37,7 @@ METADATA_FILTER_SCHEMA = {
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of documents to return. Omit to fetch the minimum 100 matching results."
+                    "description": "Maximum number of documents to return. Defaults to 100, and values are capped at 100."                
                 }
             },
             "required": [],
@@ -84,6 +84,11 @@ async def execute_metadata_filter(
 
     if status is not None and status not in VALID_STATUSES:
         return [{"error": f"'{status}' is not a valid status."}]
+
+    try:
+        limit = max(1, min(int(limit or 100), 100))
+    except (ValueError, TypeError):
+        return [{"error": "Limit must be an integer between 1 and 100."}]
 
     try:
         result = await db_session.execute(
