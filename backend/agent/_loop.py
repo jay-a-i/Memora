@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.config import get_stream_writer
 from langgraph.runtime import Runtime
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage, trim_messages
 
 from agent import AgentContext, AgentState, AGENT_SYSTEM_PROMPT
 from core import settings, client_message
@@ -52,11 +52,21 @@ async def llm_node(state: AgentState, runtime: Runtime):
     This node passes the current state (conversation history + tool outputs) to the LLM.
     """
 
-    messages = state["messages"]
-    if not messages or not isinstance(messages[0], SystemMessage):
-        messages = [SystemMessage(content=AGENT_SYSTEM_PROMPT)] + list(messages)
+    messages = [
+        SystemMessage(content=AGENT_SYSTEM_PROMPT),
+        *list(state["messages"]),
+        ]
 
-    response = await llm.ainvoke(messages)
+    _messages = trim_messages(
+        messages,
+        max_tokens=settings.MAX_CONTEXT_TOKENS,
+        token_counter="approximate",
+        strategy="last",
+        start_on="human",
+        include_system=True
+    )
+    
+    response = await llm.ainvoke(_messages)
 
     return {
         "messages": [response],
@@ -115,6 +125,38 @@ async def tool_executor(state: AgentState, runtime: Runtime):
                 raise ValueError(f"Tool {tool_name} not found in registry.")
             
             raw_result = await tool_function(**tool_args, db_session=db_session)
+
+            # Emit real retrieval metadata to the frontend.
+            if tool_name == "hybrid_search" and writer is not None:
+                sources = []
+
+                if isinstance(raw_result, list):
+                    for row in raw_result:
+                        if not isinstance(row, dict):
+                            continue
+
+                        document_id = row.get("document_id")
+                        label = row.get("source")
+
+                        # Ignore informational/error objects that aren't search results.
+                        if not document_id or not label:
+                            continue
+
+                        sources.append({
+                            "label": label,
+                            "filename": label,
+                            "document_id": document_id,
+                            "chunk": row.get("chunk_index"),
+                            "score": row.get("relevance_score"),
+                            "snippet": str(row.get("content", ""))[:300],
+                        })
+
+                if sources:
+                    writer({
+                        "type": "sources",
+                        "sources": sources,
+                    })
+
             formatted_result = json.dumps(raw_result, default=str)
 
         except Exception as e:
