@@ -2,13 +2,22 @@ import json
 import logging
 import uuid
 import asyncio
+from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter, 
+    Depends, 
+    HTTPException, 
+    Request, 
+    status, 
+    Query
+)
 from fastapi.responses import StreamingResponse
 
 from langchain_core.messages import HumanMessage, AIMessage
+from langgraph.errors import GraphRecursionError
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,25 +112,35 @@ async def _get_or_create_session(
     return session
 
 
-async def _load_history(
-    db: AsyncSession, session_id: uuid.UUID, limit: int
-) -> list[ChatMessage]:
-    """
-    Returns up to `limit` most recent messages, oldest first.
+async def _load_history_page(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    limit: int = 50,
+    before_seq: int | None = None,
+) -> tuple[list[ChatMessage], int | None]:
 
-    Ordered by `seq`, not `created_at`: coarse platform clocks (Windows is
-    ~15.6ms) let a user message and its assistant reply share a timestamp,
-    which made the transcript order arbitrary.
-    """
-    result = await db.execute(
-        select(ChatMessage)
-        .where(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.seq.desc())
-        .limit(limit)
+    limit = max(1, min(int(limit), 100))
+
+    stmt = select(ChatMessage).where(
+        ChatMessage.session_id == session_id
     )
-    messages = list(result.scalars().all())
-    messages.reverse()
-    return messages
+
+    if before_seq is not None:
+        stmt = stmt.where(ChatMessage.seq < before_seq)
+
+    stmt = stmt.order_by(ChatMessage.seq.desc()).limit(limit + 1)
+
+    result = await db.execute(stmt)
+    rows = list(result.scalars().all())
+
+    has_more = len(rows) > limit
+
+    rows = rows[:limit]
+    rows.reverse()
+
+    next_before_seq = rows[0].seq if has_more and rows else None
+
+    return rows, next_before_seq
 
 
 async def _find_turn_message(
@@ -199,6 +218,7 @@ def get_session_lock(session_id: str) -> asyncio.Lock:
 
     return lock
 
+
 @router.post(
     "/stream",
     summary="Stream an agentic RAG answer over SSE",
@@ -246,11 +266,14 @@ async def chat_stream(
     session = await _get_or_create_session(db_session, session_uuid)
 
     graph = getattr(request.app.state, "graph", None)
+
     if graph is None:
+        logger.warning("The Graph is Unvailable.")
         session_lock.release()
+
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Graph is None",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The Agent is unvailable. Please try shortly.",
         )
     
     config = {
@@ -271,11 +294,10 @@ async def chat_stream(
         ),
         None,
     )
+
     run_context = AgentContext(db_session=db_session)
 
 
-    # ---- Idempotency gate: MUST happen before graph.astream ----
-    
     existing_user = await _find_turn_message(
         db_session,
         session_uuid,
@@ -423,50 +445,85 @@ async def chat_stream(
         try:
             stream_input = None if resume_existing_run else graph_input
 
-            async for mode, item in graph.astream(
-                stream_input,
-                config=config,
-                context=run_context,
-                stream_mode=["messages", "custom"],
-            ):
-                if mode == "custom":
-                    if isinstance(item, dict) and item.get("type") == "tool_start":
-                        current_parts = []
-                        yield _sse(item)
-                    elif isinstance(item, dict) and item.get("type") == "tool_end":
-                        current_parts = []
-                        yield _sse(item)
-                    continue
+            async with aclosing(
+                graph.astream(
+                    stream_input,
+                    config=config,
+                    context=run_context,
+                    stream_mode=["messages", "custom"],
+                )
+            ) as graph_stream:
+                
+                async for mode, item in graph_stream:
 
-                if mode != "messages":
-                    continue
+                    if mode == "custom":
+                        if not isinstance(item, dict):
+                            continue
+                        event_type = item.get("type")
 
-                chunk = item[0] if isinstance(item, tuple) else item
-                content = getattr(chunk, "content", None)
-                if isinstance(content, str) and content:
-                    current_parts.append(content)
-                    yield _sse({"type": "chunk", "content": content})
-                elif isinstance(content, list) and content:
-                    text = "".join(
-                        part.get("text", "")
-                        for part in content
-                        if isinstance(part, dict)
-                    )
-                    if text:
-                        current_parts.append(text)
-                        yield _sse({"type": "chunk", "content": text})
+                        if event_type == "tool_start":
+                            current_parts = []
 
-            answer = "".join(current_parts)
+                        if event_type == "tool_stop":
+                            current_parts = []
 
-            await _store_assistant_turn(
-                db_session, session_uuid, payload.turn_id, answer,
+                        if event_type in {"tool_start", "tool_stop", "sources"}:
+                            yield _sse(item)
+                        continue
+
+                    if mode != "messages":
+                        continue
+
+                    chunk = item[0] if isinstance(item, tuple) else item
+                    content = getattr(chunk, "content", None)
+                    if isinstance(content, str) and content:
+                        current_parts.append(content)
+                        yield _sse({"type": "chunk", "content": content})
+                    elif isinstance(content, list) and content:
+                        text = "".join(
+                            part.get("text", "")
+                            for part in content
+                            if isinstance(part, dict)
+                        )
+                        if text:
+                            current_parts.append(text)
+                            yield _sse({"type": "chunk", "content": text})
+
+                answer = "".join(current_parts)
+
+                await _store_assistant_turn(
+                    db_session, session_uuid, payload.turn_id, answer,
+                )
+                session.updated_at = datetime.now(timezone.utc)
+                await db_session.commit()
+
+                yield _sse({"type": "done", "session_id": str(session_uuid)})
+                yield "data: [DONE]\n\n"
+
+        except asyncio.CancelledError:
+            # The client disconnected or execution was cancelled.
+            await db_session.rollback()
+
+            logger.info(
+                "Chat stream cancelled for session %s, turn %s",
+                session_uuid,
+                payload.turn_id,
             )
-            session.updated_at = datetime.now(timezone.utc)
-            await db_session.commit()
+            raise
 
-            yield _sse({"type": "done", "session_id": str(session_uuid)})
+        except GraphRecursionError:
+            await db_session.rollback()
+
+            yield _sse({
+                "type": "error",
+                "message": (
+                    "The agent reached its execution-step limit. "
+                    "Retry this turn to resume the unfinished execution."
+                ),
+            })
+
             yield "data: [DONE]\n\n"
-
+            
         except Exception as e:
             await db_session.rollback()
             yield _sse(
@@ -534,30 +591,44 @@ async def list_sessions(
 @router.get(
     "/sessions/{session_id}",
     response_model=ChatHistoryResponseSchema,
-    summary="Fetch a session transcript",
+    summary="Fetch a page of session history",
 )
 async def get_session_history(
     session_id: uuid.UUID,
+    limit: int = Query(default=50, ge=1, le=100),
+    before_seq: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db),
     _auth: str = Depends(verify_api_hitter),
 ):
-    """Returns the stored messages for a session, oldest first."""
     result = await db.execute(
         select(ChatSession).where(ChatSession.id == session_id)
     )
-    if not result.scalar_one_or_none():
+
+    if result.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Chat session {session_id} not found.",
+            detail="Chat session not found.",
         )
 
-    messages = await _load_history(db, session_id, settings.MAX_HISTORY_MESSAGES)
+    messages, next_cursor = await _load_history_page(
+        db,
+        session_id,
+        limit,
+        before_seq,
+    )
+
     return ChatHistoryResponseSchema(
         session_id=session_id,
         messages=[
-            ChatMessageSchema(role=m.role, content=m.content, turn_id=m.turn_id,
-                ) for m in messages]
-        )
+            ChatMessageSchema(
+                role=m.role,
+                content=m.content,
+                turn_id=m.turn_id,
+            )
+            for m in messages
+        ],
+        next_before_seq=next_cursor,
+    )
 
 
 @router.delete(
