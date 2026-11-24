@@ -27,42 +27,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Opens the checkpointer pool at startup and compiles the graph around it.
-    Closes the DB engine cleanly and shutdowns if the checkpointer fails to initialize.
-    """
     try:
-        saver = await checkpointer_manager.start()        
-        if saver is None:
-            logger.critical("CRITICAL: checkpointer_manager.start() returned None. Persistence is required.")
-            await engine.dispose()
-            raise SystemExit(1)
-            
-    except SystemExit:
-        raise
-    except Exception as e:
-        logger.critical(f"CRITICAL: Failed to start checkpointer manager due to error: {e}")
-        try:
-            await engine.dispose()
-        except Exception as dispose_err:
-            logger.error(f"Failed to dispose engine during crash cleanup: {dispose_err}")
-        raise SystemExit(1)
-    
-    app.state.checkpointer = saver
-    logger.info("Checkpointer Initialized")
-    
-    app.state.graph = get_graph(saver)
-    logger.info("Graph Compiled")
+        saver = await checkpointer_manager.start()
 
-    try:
+        if saver is None:
+            raise RuntimeError(
+                "PostgreSQL checkpointer initialization failed."
+            )
+
+        app.state.checkpointer = saver
+        app.state.graph = get_graph(saver)
+
         logger.info("Backend successfully started.")
+
         yield
+
     finally:
         await checkpointer_manager.stop()
         await engine.dispose()
-        logger.info("Shutdown complete; checkpointer pool and DB engine closed.")
+
+        logger.info("Backend shutdown complete.")
 
 
 app = FastAPI(
