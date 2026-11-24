@@ -1,9 +1,9 @@
 import json
-from typing import List
+from typing import List, Annotated
 from pathlib import Path
 
-from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
 
 #backend/core/config.py -> parents[0]=core, parents[1]=backend
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -16,50 +16,47 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str        
     BACKEND_VERSION: str 
-    CORS_ORIGINS: List[str]  
+    CORS_ORIGINS: Annotated[list[str], NoDecode]
 
-    # --- DATABASE ------------------------------------------------------------
+    #Database
     DATABASE_URL: str
     DB_ECHO: bool            
-    DB_POOL_SIZE: int        
-    DB_MAX_OVERFLOW: int
+    DB_POOL_SIZE: int = Field(gt=0)
+    DB_MAX_OVERFLOW: int = Field(ge=-1)
 
-    # --- SECRETS ------------------------------------------------------------
+    #API KEYS
     OPENROUTER_API_KEY: str 
     COHERE_API_KEY: str     
     TAVILY_API_KEY: str
     APP_API_KEY: str        
 
-    # --- MODELS ------------------------------------------------------------
+    #Models
     LLM: str
     EMBEDDING_MODEL: str
 
-    # --- EMBEDDING ------------------------------------------------------------
-    EMBEDDING_DIMENSIONS: int
-    EMBEDDING_BATCH_SIZE: int
+    #Embeddings
+    EMBEDDING_DIMENSIONS: int = Field(gt=0)
+    EMBEDDING_BATCH_SIZE: int = Field(gt=0)
 
-    # --- Ingestion ------------------------------------------------------------
+    #Ingestion
+    MAX_UPLOAD_BYTES: int = Field(gt=0)
+    CHUNK_SIZE: int = Field(gt=0)
+    CHUNK_OVERLAP: int = Field(ge=0)
+    INGEST_BATCH_SIZE: int = Field(gt=0)
     UPLOAD_DIR: str
-    MAX_UPLOAD_BYTES: int
-    ALLOWED_EXTENSIONS: List[str]
-    CHUNK_SIZE: int
-    CHUNK_OVERLAP: int
-    INGEST_BATCH_SIZE: int
+    ALLOWED_EXTENSIONS: Annotated[list[str], NoDecode]
     EXTRACT_IMAGES: bool
 
-    # --- Agent ------------------------------------------------------------
-    MAX_TOOL_CALLS: int
-    MAX_LLM_CALLS: int
-    MAX_HISTORY_MESSAGES: int
-    MAX_CONTEXT_TOKENS: int
-
-    #--- Tools --------------------------------------------------------------
+    #Agent
+    MAX_TOOL_CALLS: int = Field(gt=0)
+    MAX_LLM_CALLS: int = Field(gt=0)
+    MAX_CONTEXT_TOKENS: int = Field(gt=0)
     TOOL_CHOICE: str
     PARALLEL_TOOL_CALL: bool
 
-    # --- LangGraph checkpointer --------------------------------------------
-    CHECKPOINTER_POOL_SIZE: int
-    CHECKPOINTER_TIMEOUT: float
+    #Checkpointer
+    CHECKPOINTER_POOL_SIZE: int = Field(gt=0)
+    CHECKPOINTER_TIMEOUT: float = Field(gt=0)
 
     model_config = SettingsConfigDict(
         env_file= BACKEND_DIR / "app.env",
@@ -67,39 +64,42 @@ class Settings(BaseSettings):
     )
 
 
-    @field_validator("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "EMBEDDING_DIMENSIONS", "EMBEDDING_BATCH_SIZE",
-                     "MAX_UPLOAD_BYTES", "CHUNK_SIZE", "CHUNK_OVERLAP", "INGEST_BATCH_SIZE", "MAX_TOOL_CALLS",
-                     "MAX_LLM_CALLS", "MAX_HISTORY_MESSAGES", "MAX_CONTEXT_TOKENS","CHECKPOINTER_POOL_SIZE", 
-                     mode="before")
+    @field_validator(
+        "OPENROUTER_API_KEY",
+        "COHERE_API_KEY",
+        "APP_API_KEY",
+        mode="before",
+    )
     @classmethod
-    def str_to_int(cls, v: str) -> int:
-        if type(v) == str:
-            return int(v.strip())
-        return v
-    
-
-    @field_validator("CHECKPOINTER_TIMEOUT", mode="before")
-    @classmethod
-    def str_to_float(cls, v: str) -> float:
-        if type(v) == str:
-            return float(v.strip())
-        return v
+    def validate_required_keys(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("This API key cannot be empty.")
+        return value.strip()
 
     @field_validator("CORS_ORIGINS", "ALLOWED_EXTENSIONS", mode="before")
     @classmethod
-    def _split_csv_to_valid_cors(cls, v):
-        """Accept a JSON array, a comma-separated string, or a list."""
-        if isinstance(v, str):
-            v = v.strip()
-            if not v:
+    def parse_string_lists(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+
+            if not value:
                 return []
-            if v.startswith("["):
+
+            if value.startswith("["):
                 try:
-                    return json.loads(v)
+                    value = json.loads(value)
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON list: {v!r}") from e
-            return [item.strip() for item in v.split(",") if item.strip()]
-        return v
+                    raise ValueError("Invalid JSON list.") from e
+            else:
+                value = value.split(",")
+
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("Expected a list or comma-separated string.")
+
+        if not all(isinstance(item, str) for item in value):
+            raise ValueError("Every list item must be a string.")
+
+        return [item.strip() for item in value if item.strip()]
 
 
     @field_validator("DATABASE_URL")
@@ -112,15 +112,6 @@ class Settings(BaseSettings):
         return v
 
 
-    @model_validator(mode="after")
-    def _check_model_credentials(self) -> "Settings":
-        if not self.OPENROUTER_API_KEY:
-            raise ValueError("OPENROUTER_API_KEY is required for chat completions.")
-        if not self.COHERE_API_KEY:
-            raise ValueError("COHERE_API_KEY is required for embeddings.")
-        return self
-
-
     @field_validator(
         "LLM", 
         "EMBEDDING_MODEL", 
@@ -130,34 +121,11 @@ class Settings(BaseSettings):
     def _reject_blank_model_id(cls, v: str) -> str:
         if not v.strip():
             raise ValueError(
-                "must name a model; remove the line from app.env to use the "
-                "default, or set it to a real model id"
+                "Must put an LLM and Embedding model in app.env"
             )
         return v
+
     
-
-    @field_validator( 
-        "CHUNK_SIZE", 
-        "EMBEDDING_BATCH_SIZE",
-        "INGEST_BATCH_SIZE", 
-        "MAX_TOOL_CALLS", 
-        "MAX_LLM_CALLS", 
-        "MAX_CONTEXT_TOKENS"
-    )
-    @classmethod
-    def _reject_non_positive(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError("Value must be greater that zero.")
-        return v
-
-
-    @field_validator("CHUNK_OVERLAP")
-    @classmethod
-    def _reject_negative_overlap(cls, value: int) -> int:
-        if value < 0:
-            raise ValueError("CHUNK_OVERLAP cannot be negative.")
-        return value
-
     @model_validator(mode="after")
     def _check_chunk_overlap(self) -> "Settings":
         if self.CHUNK_OVERLAP >= self.CHUNK_SIZE:
@@ -167,8 +135,4 @@ class Settings(BaseSettings):
             )
         return self
 
-    
-"""
-    Global Singleton.
-"""
 settings = Settings()
