@@ -22,6 +22,7 @@ from langgraph.errors import GraphRecursionError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import aliased
 
 from agent import AgentContext
 from core import settings, log_and_client_message, verify_api_hitter 
@@ -163,6 +164,49 @@ async def _find_turn_message(
     return result.scalar_one_or_none()
 
 
+async def _find_oldest_unfinished_user_turn(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+) -> ChatMessage | None:
+    """
+    Finds the oldest user message that has no corresponding assistant
+    response in the same session.
+
+    A logical turn is identified by:
+        session_id + turn_id
+
+    The assistant response must use the same turn_id.
+    """
+
+    assistant = aliased(ChatMessage)
+
+    assistant_exists = (
+        select(1)
+        .select_from(assistant)
+        .where(
+            assistant.session_id == ChatMessage.session_id,
+            assistant.turn_id == ChatMessage.turn_id,
+            assistant.role == MessageRole.ASSISTANT.value,
+        )
+        .exists()
+    )
+
+    stmt = (
+        select(ChatMessage)
+        .where(
+            ChatMessage.session_id == session_id,
+            ChatMessage.role == MessageRole.USER.value,
+            ~assistant_exists,
+        )
+        .order_by(ChatMessage.seq.asc())
+        .limit(1)
+    )
+
+    result = await db.execute(stmt)
+
+    return result.scalar_one_or_none()
+
+
 async def _claim_user_turn(
     db: AsyncSession,
     session_id: uuid.UUID,
@@ -263,6 +307,12 @@ async def chat_stream(
                 detail="The messages input cannot be empty",
             )
 
+        if payload.messages[-1].role != MessageRole.USER:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The final message must have the user role.",
+            )
+
         user_msg = payload.messages[-1].content
 
 
@@ -270,7 +320,7 @@ async def chat_stream(
             select(ChatSession).where(ChatSession.id == session_uuid)
         )
 
-        session = result.scaler_one_or_none()
+        session = result.scalar_one_or_none()
 
         if session is None:
             raise HTTPException(
@@ -323,6 +373,23 @@ async def chat_stream(
             payload.turn_id,
             MessageRole.ASSISTANT.value,
         )
+
+        pending_turn = await _find_oldest_unfinished_user_turn(
+            db_session,
+            session_uuid,
+        )
+
+        if (
+            pending_turn is not None
+            and pending_turn.turn_id != payload.turn_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A previous conversation turn is unfinished. "
+                    "Retry that turn before submitting a new question."
+                ),
+            )
 
         graph_input = None
         resume_existing_run = False
