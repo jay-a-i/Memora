@@ -66,11 +66,11 @@ def _checkpoint_answer_for_turn(
     turn_id: str,
 ) -> str | None:
     """
-    Extract a completed assistant answer that belongs to this turn.
+    Extract the completed assistant answer belonging to one logical turn.
 
-    Returns None if the turn's HumanMessage or its completed answer
-    cannot be found.
+    Never inspect messages belonging to subsequent turns.
     """
+
     turn_index = next(
         (
             index
@@ -84,32 +84,35 @@ def _checkpoint_answer_for_turn(
     if turn_index is None:
         return None
 
-    for message in reversed(messages[turn_index + 1:]):
-        if isinstance(message, AIMessage):
-            # A tool-call message is not a completed user-facing answer.
-            if message.tool_calls:
-                return None
-            
-            answer = _content_as_text(message.content)
-            return answer or None
-        
-    return None
+    end_index = len(messages)
 
+    # Stop when the next user turn begins.
+    for index in range(turn_index + 1, len(messages)):
+        if isinstance(messages[index], HumanMessage):
+            end_index = index
+            break
 
-async def _get_or_create_session(
-    db: AsyncSession, session_id: uuid.UUID
-) -> ChatSession:
-    result = await db.execute(
-        select(ChatSession).where(ChatSession.id == session_id)
+    turn_messages = messages[turn_index + 1:end_index]
+
+    last_assistant_message = next(
+        (
+            message
+            for message in reversed(turn_messages)
+            if isinstance(message, AIMessage)
+        ),
+        None,
     )
-    session = result.scalar_one_or_none()
-    if session:
-        return session
 
-    session = ChatSession(id=session_id, title="New Chat")
-    db.add(session)
-    await db.flush()
-    return session
+    if last_assistant_message is None:
+        return None
+
+    # An assistant message with outstanding tool calls isn't a final answer.
+    if last_assistant_message.tool_calls:
+        return None
+
+    answer = _content_as_text(last_assistant_message.content)
+
+    return answer or None
 
 
 async def _load_history_page(
@@ -201,15 +204,13 @@ async def _store_assistant_turn(
     await db.execute(stmt)
 
 
+_session_locks: dict[str, asyncio.Lock] = {}
 def get_session_lock(session_id: str) -> asyncio.Lock:
     """
     Return the lock associated with one conversation.
 
-    This coordinates requests within a single running backend process.
+    This coordinates requests within one backend process.
     """
-
-    _session_locks: dict[str, asyncio.Lock] = {}
-
     lock = _session_locks.get(session_id)
 
     if lock is None:
@@ -244,305 +245,321 @@ async def chat_stream(
     """
     try:
         session_uuid = uuid.UUID(str(payload.session_id))
-
-        session_lock = get_session_lock(str(session_uuid))
-        await session_lock.acquire()
-
     except (ValueError, AttributeError, TypeError):
-        session_lock.release()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'{payload.session_id}' is not a valid session UUID.",
         )
 
-    if not payload.messages or not payload.messages[-1].content.strip():
-        session_lock.release()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The messages input cannot be empty",
+    session_lock = get_session_lock(str(session_uuid))
+    await session_lock.acquire()
+
+    lock_transferred_to_stream = False
+
+    try:
+        if not payload.messages or not payload.messages[-1].content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The messages input cannot be empty",
+            )
+
+        user_msg = payload.messages[-1].content
+
+
+        result = await db_session.execute(
+            select(ChatSession).where(ChatSession.id == session_uuid)
         )
 
-    user_msg = payload.messages[-1].content
-    session = await _get_or_create_session(db_session, session_uuid)
+        session = result.scaler_one_or_none()
 
-    graph = getattr(request.app.state, "graph", None)
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat session not found."
+            )
 
-    if graph is None:
-        logger.warning("The Graph is Unvailable.")
-        session_lock.release()
+        graph = getattr(request.app.state, "graph", None)
 
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The Agent is unvailable. Please try shortly.",
-        )
-    
-    config = {
-        "configurable": {
-            "thread_id": thread_id_for(session_uuid)
-        },
-        "recursion_limit": 30
-    }
-
-    snapshot = await graph.aget_state(config)
-    checkpoint_messages = list(snapshot.values.get("messages", []))
-
-    last_checkpointed_user = next(
-        (
-            message
-            for message in reversed(checkpoint_messages)
-            if isinstance(message, HumanMessage)
-        ),
-        None,
-    )
-
-    run_context = AgentContext(db_session=db_session)
-
-
-    existing_user = await _find_turn_message(
-        db_session,
-        session_uuid,
-        payload.turn_id,
-        MessageRole.USER.value,
-    )
-
-    existing_assistant = await _find_turn_message(
-        db_session,
-        session_uuid,
-        payload.turn_id,
-        MessageRole.ASSISTANT.value,
-    )
-
-    graph_input = None
-    resume_existing_run = False
-    replay_answer: str | None = None
-
-    if existing_user is not None:
-        # Reusing a turn ID with different content is invalid.
-        if existing_user.content != user_msg:
+        if graph is None:
+            logger.warning("The Graph is Unvailable.")
             
-            session_lock.release()
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This turn ID has already been used for different content.",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The Agent is unvailable. Please try shortly.",
             )
+        
+        config = {
+            "configurable": {
+                "thread_id": thread_id_for(session_uuid)
+            },
+            "recursion_limit": 30
+        }
 
-        if existing_assistant is not None:
-            # The turn completed previously. Replay the saved answer.
-            replay_answer = existing_assistant.content
+        snapshot = await graph.aget_state(config)
+        checkpoint_messages = list(snapshot.values.get("messages", []))
 
-        elif snapshot.next:
-            # There is unfinished graph work. Resume only if it belongs
-            # to the same logical user turn.
-            if (
-                last_checkpointed_user is None
-                or last_checkpointed_user.id != payload.turn_id
-            ):
-                session_lock.release()
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "Another turn is unfinished. Resume that turn "
-                        "before submitting a different question."
-                    ),
-                )
+        last_checkpointed_user = next(
+            (
+                message
+                for message in reversed(checkpoint_messages)
+                if isinstance(message, HumanMessage)
+            ),
+            None,
+        )
 
-            resume_existing_run = True
+        run_context = AgentContext(db_session=db_session)
 
-        else:
-            # Recover the case where LangGraph checkpointed its final answer,
-            # but the application failed before saving it to chat_messages.
-            recovered_answer = _checkpoint_answer_for_turn(
-                checkpoint_messages,
-                payload.turn_id,
-            )
 
-            if recovered_answer is not None:
-                await _store_assistant_turn(
-                    db_session,
-                    session_uuid,
-                    payload.turn_id,
-                    recovered_answer,
-                )
-                await db_session.commit()
-                replay_answer = recovered_answer
-
-            elif not any(
-                isinstance(message, HumanMessage)
-                and message.id == payload.turn_id
-                for message in checkpoint_messages
-            ):
-                # The SQL turn exists, but the graph never checkpointed its input.
-                graph_input = {
-                    "messages": [
-                        HumanMessage(
-                            content=user_msg,
-                            id=payload.turn_id,
-                        )
-                    ]
-                }
-
-            else:
-                session_lock.release()
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "The turn is in an inconsistent state. "
-                        "Do not append another copy of the question."
-                    ),
-                )
-
-    else:
-        # New logical turn. Never append a new question to an unfinished run.
-        if snapshot.next:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "A previous graph execution is unfinished. "
-                    "Retry that turn before submitting a new question."
-                ),
-            )
-
-        is_new_turn = await _claim_user_turn(
+        existing_user = await _find_turn_message(
             db_session,
             session_uuid,
             payload.turn_id,
-            user_msg,
+            MessageRole.USER.value,
         )
 
-        if not is_new_turn:
+        existing_assistant = await _find_turn_message(
+            db_session,
+            session_uuid,
+            payload.turn_id,
+            MessageRole.ASSISTANT.value,
+        )
 
-            session_lock.release()
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This turn has already been submitted.",
-            )
+        graph_input = None
+        resume_existing_run = False
+        replay_answer: str | None = None
 
-        graph_input = {
-            "messages": [
-                HumanMessage(
-                    content=user_msg,
-                    id=payload.turn_id,
+        if existing_user is not None:
+            # Reusing a turn ID with different content is invalid.
+            if existing_user.content != user_msg:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This turn ID has already been used for different content.",
                 )
-            ]
-        }
 
-    async def sse_generator() -> AsyncGenerator[str, None]:
+            if existing_assistant is not None:
+                # The turn completed previously. Replay the saved answer.
+                replay_answer = existing_assistant.content
 
-        if replay_answer is not None:
-            if replay_answer:
-                yield _sse({
-                    "type": "chunk",
-                    "content": replay_answer,
-                })
+            elif snapshot.next:
+                # There is unfinished graph work. Resume only if it belongs
+                # to the same logical user turn.
+                if (
+                    last_checkpointed_user is None
+                    or last_checkpointed_user.id != payload.turn_id
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "Another turn is unfinished. Resume that turn "
+                            "before submitting a different question."
+                        ),
+                    )
 
-            yield _sse({"type": "done", "session_id": str(session_uuid),})
-            yield "data: [DONE]\n\n"
-            
-            return
+                resume_existing_run = True
 
-        current_parts: list[str] = []
-
-        try:
-            stream_input = None if resume_existing_run else graph_input
-
-            async with aclosing(
-                graph.astream(
-                    stream_input,
-                    config=config,
-                    context=run_context,
-                    stream_mode=["messages", "custom"],
+            else:
+                # Recover the case where LangGraph checkpointed its final answer,
+                # but the application failed before saving it to chat_messages.
+                recovered_answer = _checkpoint_answer_for_turn(
+                    checkpoint_messages,
+                    payload.turn_id,
                 )
-            ) as graph_stream:
-                
-                async for mode, item in graph_stream:
 
-                    if mode == "custom":
-                        if not isinstance(item, dict):
-                            continue
-                        event_type = item.get("type")
+                if recovered_answer is not None:
+                    await _store_assistant_turn(
+                        db_session,
+                        session_uuid,
+                        payload.turn_id,
+                        recovered_answer,
+                    )
+                    await db_session.commit()
+                    replay_answer = recovered_answer
 
-                        if event_type == "tool_start":
-                            current_parts = []
+                elif not any(
+                    isinstance(message, HumanMessage)
+                    and message.id == payload.turn_id
+                    for message in checkpoint_messages
+                ):
+                    # The SQL turn exists, but the graph never checkpointed its input.
+                    graph_input = {
+                        "messages": [
+                            HumanMessage(
+                                content=user_msg,
+                                id=payload.turn_id,
+                            )
+                        ]
+                    }
 
-                        if event_type == "tool_stop":
-                            current_parts = []
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "The turn is in an inconsistent state. "
+                            "Do not append another copy of the question."
+                        ),
+                    )
 
-                        if event_type in {"tool_start", "tool_stop", "sources"}:
-                            yield _sse(item)
-                        continue
-
-                    if mode != "messages":
-                        continue
-
-                    chunk = item[0] if isinstance(item, tuple) else item
-                    content = getattr(chunk, "content", None)
-                    if isinstance(content, str) and content:
-                        current_parts.append(content)
-                        yield _sse({"type": "chunk", "content": content})
-                    elif isinstance(content, list) and content:
-                        text = "".join(
-                            part.get("text", "")
-                            for part in content
-                            if isinstance(part, dict)
-                        )
-                        if text:
-                            current_parts.append(text)
-                            yield _sse({"type": "chunk", "content": text})
-
-                answer = "".join(current_parts)
-
-                await _store_assistant_turn(
-                    db_session, session_uuid, payload.turn_id, answer,
+        else:
+            # New logical turn. Never append a new question to an unfinished run.
+            if snapshot.next:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "A previous graph execution is unfinished. "
+                        "Retry that turn before submitting a new question."
+                    ),
                 )
-                session.updated_at = datetime.now(timezone.utc)
-                await db_session.commit()
 
-                yield _sse({"type": "done", "session_id": str(session_uuid)})
-                yield "data: [DONE]\n\n"
-
-        except asyncio.CancelledError:
-            # The client disconnected or execution was cancelled.
-            await db_session.rollback()
-
-            logger.info(
-                "Chat stream cancelled for session %s, turn %s",
+            is_new_turn = await _claim_user_turn(
+                db_session,
                 session_uuid,
                 payload.turn_id,
+                user_msg,
             )
-            raise
 
-        except GraphRecursionError:
-            await db_session.rollback()
+            if not is_new_turn:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This turn has already been submitted.",
+                )
 
-            yield _sse({
-                "type": "error",
-                "message": (
-                    "The agent reached its execution-step limit. "
-                    "Retry this turn to resume the unfinished execution."
-                ),
-            })
+            graph_input = {
+                "messages": [
+                    HumanMessage(
+                        content=user_msg,
+                        id=payload.turn_id,
+                    )
+                ]
+            }
 
-            yield "data: [DONE]\n\n"
+        async def sse_generator() -> AsyncGenerator[str, None]:
+            current_parts: list[str] = []
+
+            try:
+                if replay_answer is not None:
+                    if replay_answer:
+                        yield _sse({
+                            "type": "chunk",
+                            "content": replay_answer,
+                        })
+
+                    yield _sse({"type": "done", "session_id": str(session_uuid),})
+                    yield "data: [DONE]\n\n"
+                    return
+
+                stream_input = None if resume_existing_run else graph_input
+
+                async with aclosing(
+                    graph.astream(
+                        stream_input,
+                        config=config,
+                        context=run_context,
+                        stream_mode=["messages", "custom"],
+                    )
+                ) as graph_stream:
+                    
+                    async for mode, item in graph_stream:
+
+                        if mode == "custom":
+
+                            if not isinstance(item, dict):
+                                continue
+                            event_type = item.get("type")
+
+                            if event_type == "tool_start":
+                                current_parts = []
+
+                            if event_type == "tool_end":
+                                current_parts = []
+
+                            if event_type in {
+                                "tool_start", 
+                                "tool_end", 
+                                "sources"
+                            }:
+                                yield _sse(item)
+
+                            continue
+
+                        if mode != "messages":
+                            continue
+
+                        chunk = item[0] if isinstance(item, tuple) else item
+                        content = getattr(chunk, "content", None)
+                        if isinstance(content, str) and content:
+                            current_parts.append(content)
+                            yield _sse({"type": "chunk", "content": content})
+                        elif isinstance(content, list) and content:
+                            text = "".join(
+                                part.get("text", "")
+                                for part in content
+                                if isinstance(part, dict)
+                            )
+                            if text:
+                                current_parts.append(text)
+                                yield _sse({"type": "chunk", "content": text})
+
+                    answer = "".join(current_parts)
+
+                    await _store_assistant_turn(
+                        db_session, session_uuid, payload.turn_id, answer,
+                    )
+                    session.updated_at = datetime.now(timezone.utc)
+                    await db_session.commit()
+
+                    yield _sse({"type": "done", "session_id": str(session_uuid)})
+                    yield "data: [DONE]\n\n"
+
+            except asyncio.CancelledError:
+                # The client disconnected or execution was cancelled.
+                await db_session.rollback()
+
+                logger.info(
+                    "Chat stream cancelled for session %s, turn %s",
+                    session_uuid,
+                    payload.turn_id,
+                )
+                raise
+
+            except GraphRecursionError:
+                await db_session.rollback()
+
+                yield _sse({
+                    "type": "error",
+                    "message": (
+                        "The agent reached its execution-step limit. "
+                        "Retry this turn to resume the unfinished execution."
+                    ),
+                })
+
+                yield "data: [DONE]\n\n"
+                
+            except Exception as e:
+                await db_session.rollback()
+                yield _sse(
+                    {"type": "error", "message": log_and_client_message(e, "Chat stream failed")}
+                )
+                yield "data: [DONE]\n\n"
+
+            finally:
+                session_lock.release()
             
-        except Exception as e:
-            await db_session.rollback()
-            yield _sse(
-                {"type": "error", "message": log_and_client_message(e, "Chat stream failed")}
-            )
-            yield "data: [DONE]\n\n"
+        response = StreamingResponse(
+            sse_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
-        finally:
-            session_lock.release()
+        lock_transferred_to_stream = True
+        return response
 
-    return StreamingResponse(
-        sse_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    finally:
+        if not lock_transferred_to_stream:
+            session_lock.release()       
 
 
 @router.post(
@@ -654,7 +671,6 @@ async def delete_session(
         session = result.scalar_one_or_none()
 
         if not session:
-            lock.release()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Chat session {session_id} not found.",

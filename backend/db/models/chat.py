@@ -14,10 +14,9 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 
-Base = declarative_base()
-
+from db import Base
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)

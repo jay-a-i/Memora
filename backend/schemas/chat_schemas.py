@@ -15,7 +15,7 @@ class MessageRole(str, Enum):
 
 class ChatMessageInputSchema(BaseModel):
     role: MessageRole
-    content: str = Field(max_length=20_000)
+    content: str = Field(max_lenght=20_000)
 
 
 class ChatMessageSchema(BaseModel):

@@ -14,10 +14,10 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 
-Base = declarative_base()
+from db import Base
 
 from core import settings
 

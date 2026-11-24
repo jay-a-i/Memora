@@ -69,7 +69,8 @@ class Settings(BaseSettings):
 
     @field_validator("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "EMBEDDING_DIMENSIONS", "EMBEDDING_BATCH_SIZE",
                      "MAX_UPLOAD_BYTES", "CHUNK_SIZE", "CHUNK_OVERLAP", "INGEST_BATCH_SIZE", "MAX_TOOL_CALLS",
-                     "MAX_LLM_CALLS", "MAX_HISTORY_MESSAGES", "CHECKPOINTER_POOL_SIZE", mode="before")
+                     "MAX_LLM_CALLS", "MAX_HISTORY_MESSAGES", "MAX_CONTEXT_TOKENS","CHECKPOINTER_POOL_SIZE", 
+                     mode="before")
     @classmethod
     def str_to_int(cls, v: str) -> int:
         if type(v) == str:
@@ -113,13 +114,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_model_credentials(self) -> "Settings":
-        """
-        Both model providers are required: OpenRouter serves chat completions,
-        Cohere serves embeddings.
-
-        Without this the app imports and starts, then fails per request with a
-        provider-side error instead of naming the missing key at boot.
-        """
         if not self.OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY is required for chat completions.")
         if not self.COHERE_API_KEY:
@@ -127,17 +121,13 @@ class Settings(BaseSettings):
         return self
 
 
-    @field_validator("LLM", "EMBEDDING_MODEL", mode="after")
+    @field_validator(
+        "LLM", 
+        "EMBEDDING_MODEL", 
+        mode="after"
+    )
     @classmethod
     def _reject_blank_model_id(cls, v: str) -> str:
-        """
-        Guards against an empty model id reaching a provider.
-
-        An `app.env` line like `LLM=""` sets the variable to an empty string,
-        which overrides the default rather than falling back to it. The request
-        then fails at the provider with a message that does not mention
-        configuration, so the cause is easy to miss. Failing at startup names it.
-        """
         if not v.strip():
             raise ValueError(
                 "must name a model; remove the line from app.env to use the "
@@ -146,33 +136,30 @@ class Settings(BaseSettings):
         return v
     
 
-    @field_validator("CHUNK_OVERLAP", "CHUNK_SIZE", "EMBEDDING_BATCH_SIZE",
-                     "INGEST_BATCH_SIZE", "MAX_TOOL_CALLS", "MAX_LLM_CALLS")
+    @field_validator( 
+        "CHUNK_SIZE", 
+        "EMBEDDING_BATCH_SIZE",
+        "INGEST_BATCH_SIZE", 
+        "MAX_TOOL_CALLS", 
+        "MAX_LLM_CALLS", 
+        "MAX_CONTEXT_TOKENS"
+    )
     @classmethod
     def _reject_non_positive(cls, v: int) -> int:
-        """
-        These feed `range()` steps and loop bounds directly.
-
-        A negative INGEST_BATCH_SIZE makes `range(0, n, -1)` empty, so the
-        pipeline commits COMPLETED with zero chunks and reports success. Zero
-        chunk size is rejected by the splitter. Fail at startup instead of
-        storing an empty index with no error anywhere.
-        """
         if v <= 0:
-            raise ValueError(f"must be a positive integer (got {v})")
+            raise ValueError("Value must be greater that zero.")
         return v
 
 
+    @field_validator("CHUNK_OVERLAP")
+    @classmethod
+    def _reject_negative_overlap(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("CHUNK_OVERLAP cannot be negative.")
+        return value
+
     @model_validator(mode="after")
     def _check_chunk_overlap(self) -> "Settings":
-        """
-        Overlap must stay below chunk size.
-
-        `overlap > chunk_size` raises inside the splitter during ingestion.
-        `overlap == chunk_size` is worse: it raises nothing and produces
-        near-duplicate chunks only, so a mid-sized document produced 9816
-        chunks instead of 68 -- billed and stored at 144x for no new content.
-        """
         if self.CHUNK_OVERLAP >= self.CHUNK_SIZE:
             raise ValueError(
                 f"CHUNK_OVERLAP ({self.CHUNK_OVERLAP}) must be less than "
