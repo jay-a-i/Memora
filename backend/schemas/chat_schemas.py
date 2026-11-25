@@ -15,7 +15,7 @@ class MessageRole(str, Enum):
 
 class ChatMessageInputSchema(BaseModel):
     role: MessageRole
-    content: str = Field(max_lenght=20_000)
+    content: str = Field(max_length=20_000)
 
 
 class ChatMessageSchema(BaseModel):
@@ -42,7 +42,7 @@ class ChatRequestSchema(BaseModel):
 
 
 class ChatSessionCreateSchema(BaseModel):
-    title: Optional[str] = "New Chat"
+    title: Optional[str] = Field(default="New Chat", max_length=255)
 
 
 class ChatSessionResponseSchema(BaseModel):
