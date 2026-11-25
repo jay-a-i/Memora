@@ -54,7 +54,7 @@ def chunk_text(file_path: str) -> Optional[List[Document]]:
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ".", " "],
+        separators=["\n\n", "\n", ".", " ", ""],
     )
 
     final_chunks = text_splitter.split_documents(semantic_chunks)
