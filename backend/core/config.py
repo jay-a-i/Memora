@@ -48,8 +48,6 @@ class Settings(BaseSettings):
     EXTRACT_IMAGES: bool
 
     #Agent
-    MAX_TOOL_CALLS: int = Field(gt=0)
-    MAX_LLM_CALLS: int = Field(gt=0)
     MAX_CONTEXT_TOKENS: int = Field(gt=0)
     TOOL_CHOICE: str
     PARALLEL_TOOL_CALL: bool
