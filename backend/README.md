@@ -1,54 +1,67 @@
-# 🛠️ Project Status: Under Reconstruction!
-I'm currently restructuring the project's architecture and folder layout into the following format:
+# 🛠️ Project Status: Under Development!
+I'm currently restructuring the project's architecture and folder layout is in the following format:
 
 ```text
-├── frontend/                                # Vibe Coding the frontend part
 ├── backend/
-    ├── app/
-    │   ├── api/
-    │   │   └── v1/
-    │   │       ├── endpoints/
-    │   │       │   ├── chat.py              # SSE streaming endpoint for agentic RAG
-    │   │       │   ├── documents.py         # Document upload & ingestion triggers
-    │   │       │   └── health.py
-    │   │       └── api.py                   # Router aggregation
-    │   ├── core/
-    │   │   ├── config.py                    # Pydantic BaseSettings (keys, DB URLs)
-    │   │   ├── database.py                  # SQLAlchemy / SQLModel async engines
-    │   │   ├── errors.py                    # Client-safe error messages
-    │   │   └── security.py                  # API key validation / Auth
-    │   ├── db/
-    │   │   └── models/                      # DB Schemas (Documents, Chunks, Messages)
-    │   │       ├── chat.py                  # DB Schemas for ChatSessions and ChatMessages
-    │   │       └── document.py              # DB Schemas for Document and DocumentsChunk
-    │   ├── agent/
-    │   │   ├── orchestrator.py              # Core ReAct loop engine
-    │   │   ├── prompts.py                   # System prompts and tool definitions
-    │   │   └── state.py                     # Agent execution state dataclasses
-    │   ├── tools/                           # Custom Python tools for the Agent
-    │   │   ├── hybrid_search.py             # Vector + Keyword search on Postgres
-    │   │   ├── doc_inspector.py             # Fetch surrounding chunks / full doc
-    │   │   ├── metadata_filter.py           # SQL metadata query tool
-    │   │   └── web_search.py                # External search fallback
-    │   └── services/
-    │       ├── doc_to_md.py                 # Convert the Target file to a markdown file
-    │       ├── chunking.py                  # Chunk the markdown file
-    │       ├── embeddingV2.py               # Embeddings via Cohere
-    │       └── ingestion.py                 # Background pipeline logic
+    ├── agent/
+    │   ├── __init__.py                      
+    │   ├── _loop.py                         # Core ReAct loop engine
+    │   ├── checkpointer.py                  # PostgreSQL checkpointer for the Agent
+    │   ├── prompts.py                       # System prompt
+    │   └── state.py                         # Agent execution state dataclasses
+    │
+    ├── api/
+    │   ├── v1/
+    │   │   └── endpoints/
+    │   │       ├── chat.py                  # SSE streaming endpoint for agentic RAG
+    │   │       ├── documents.py             # Document upload & ingestion triggers
+    │   │       └── health.py                # Health Check 
+    │   ├── __init__.py                      
+    │   └── _router.py                       # Router aggregation
+    │
+    ├── core/
+    │   ├── __init__.py                      
+    │   ├── config.py                        # Pydantic BaseSettings (keys, DB URL, settings for whole app)
+    │   ├── errors.py                        # Client-safe error messages
+    │   └── security.py                      # API key validation / Auth
+    │
     ├── db/
-    │   └── schema.sql                       # Reference DDL for the PostgreSQL database
+    │   ├── models/                          # DB Schemas (Documents, Chunks, Messages)
+    │   │   ├── chat.py                      # DB Schemas for ChatSessions and ChatMessages
+    │   │   └── document.py                  # DB Schemas for Document and DocumentsChunk
+    │   ├── __init__.py                      
+    │   ├── database.py                      # SQLAlchemy / SQLModel async engines
+    │   └── schema.sql                       # SQL code used to make the database tables   
+    │
     ├── schemas/                             # Pydantic API schemas for request/response
+    │   ├── __init__.py                      
     │   ├── chat_schemas.py                  # schemas for chat-messages/sessions/history 
     │   ├── common_schemas.py                # schemas for health check/error responses
     │   └── document_schemas.py              # schemas for chat-messages/sessions/history
+    │
+    ├── services/
+    │   ├── __init__.py      
+    │   ├── chunking.py                      # Chunk the markdown file                
+    │   ├── doc_to_md.py                     # Convert the Target file to a markdown file
+    │   ├── embedding.py                   # Embeddings via Cohere
+    │   └── ingestion.py                     # Background pipeline logic
+    │                   
+    ├── tools/                               # Custom Python tools for the Agent
+    │   ├── __init__.py  
+    │   ├── doc_inspector.py                 # Fetch surrounding chunks / full doc    
+    │   ├── hybrid_search.py                 # Vector + Keyword search on Postgres
+    │   ├── metadata_filter.py               # SQL metadata query tool
+    │   └── web_search.py                    # External search fallback
+    │
     ├── .dockerignore
-    └── Dockerfile
-├── main.py                                  # Application entry point
-├── pyproject.toml                           # Dependencies for the entire backend
-├── backend/README.md                        # This file
-└── uv.lock                                  # project lockfile generated by uv
+    ├── .gitignore
+    ├── .python-version
+    ├── app.env.example
+    ├── Dockerfile
+    ├── pyproject.toml                       # Dependencies for the entire backend
+    ├── backend/README.md                    # This file
+    ├── server.py                              # Application entry point
+    └── uv.lock                              # project lockfile generated by uv
 ```
 
-`db/schema.sql` is the reference DDL. The database is created from it directly
-(pgAdmin, `psql`, or any SQL client) — no code in this repo creates or migrates
-the schema, so changing it means applying the change to your database yourself.
+`db/schema.sql` is the reference DDL.
