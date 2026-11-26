@@ -3,9 +3,10 @@ import logging
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
-from langgraph.config import get_stream_writer
 from langgraph.runtime import Runtime
 from langchain_core.messages import SystemMessage, ToolMessage, trim_messages
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from agent import AgentContext, AgentState, AGENT_SYSTEM_PROMPT
 from core import settings, client_message
@@ -97,11 +98,7 @@ async def tool_executor(state: AgentState, runtime: Runtime):
     tool_responses = []
     db_session = _session_of(runtime)
 
-    writer = None
-    try:
-        writer = get_stream_writer()
-    except Exception:
-        writer = None
+    writer = runtime.stream_writer
 
     tool_calls = getattr(last_message, "tool_calls", None) or []
     for tool_call in tool_calls:
@@ -109,13 +106,12 @@ async def tool_executor(state: AgentState, runtime: Runtime):
         tool_args = tool_call.get("args") or {}
         tool_call_id = tool_call.get("id") or f"call_{tool_name}"
 
-        if writer is not None:
-            try:
-                writer({"type": "tool_start", "name": tool_name,
-                        "status": f"Running {tool_name}..."})
-            except Exception:
-                logger.debug("Could not emit tool_start for %s", tool_name)
-
+        writer(
+            {
+                "type": "tool_start", "name": tool_name,
+                "status": f"Running {tool_name}..."
+            }
+        )
         try:
             tool_function = TOOLS_MAP.get(tool_name)
 
@@ -124,7 +120,7 @@ async def tool_executor(state: AgentState, runtime: Runtime):
             
             raw_result = await tool_function(**tool_args, db_session=db_session)
 
-            if tool_name == "hybrid_search" and writer is not None:
+            if tool_name == "hybrid_search":
                 sources = []
 
                 if isinstance(raw_result, list):
@@ -162,8 +158,11 @@ async def tool_executor(state: AgentState, runtime: Runtime):
             if db_session is not None:
                 try:
                     await db_session.rollback()
-                except Exception:
-                    logger.warning("Could not roll back after tool failure")
+                except SQLAlchemyError:
+                    logger.warning(
+                        "Could not roll back after tool failure",
+                        exc_info=True,
+                    )
             formatted_result = json.dumps(
                 {"error": f"Error executing {tool_name}: {client_message(e)}"}
             )
@@ -175,11 +174,11 @@ async def tool_executor(state: AgentState, runtime: Runtime):
         )
         tool_responses.append(tool_message)
 
-        if writer is not None:
-            try:
-                writer({"type": "tool_end", "name": tool_name})
-            except Exception:
-                logger.debug("Could not emit tool_end for %s", tool_name)
+        writer(
+            {
+                "type": "tool_end", "name": tool_name
+            }
+        )
 
     return {
         "messages": tool_responses,
