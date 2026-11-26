@@ -25,7 +25,7 @@ def chunk_text(file_path: str) -> Optional[List[Document]]:
     """Splits a Markdown file into semantic chunks based on headers and character count.
 
     Applies a two-stage chunking strategy: first splitting text at Markdown header boundaries
-    (# through ######), followed by a recursive character split to enforce maximum token
+    (# through ######), followed by a recursive character split to enforce maximum character
     length constraints.
 
     Args:
