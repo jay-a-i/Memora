@@ -103,10 +103,19 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL")
     @classmethod
     def _require_async_driver(cls, v: str) -> str:
-        if v.startswith("postgresql://"):
-            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        v = v.strip()
+
         if v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+
+        elif v.startswith("postgresql://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        if not v.startswith("postgresql+asyncpg://"):
+            raise ValueError(
+                "DATABASE_URL must use PostgreSQL with the asyncpg driver."
+            )
+
         return v
 
 

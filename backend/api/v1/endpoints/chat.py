@@ -275,17 +275,12 @@ async def chat_stream(
     _auth: str = Depends(verify_api_hitter),
 ) -> StreamingResponse:
     """
-    Streams the agent's response token-by-token using Server-Sent Events (SSE).
+    Streams the agent's response chunk-by-chunk using Server-Sent Events (SSE).
 
     The agent keeps its own memory: with the Postgres checkpointer enabled,
     LangGraph restores this conversation's saved state -- prior messages, tool
     calls and their results -- and resumes from it, so only the new question is
     sent.
-
-    Idempotency: the client should send a stable `turn_id` per logical turn.
-    A retry that reuses the same `turn_id` receives 409 and never re-enters
-    the graph, so no duplicate user message is persisted and no duplicate
-    HumanMessage is appended to the checkpointed thread state.
     """
     try:
         session_uuid = uuid.UUID(str(payload.session_id))
