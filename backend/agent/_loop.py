@@ -70,7 +70,6 @@ async def llm_node(state: AgentState, runtime: Runtime):
 
     return {
         "messages": [response],
-        "llm_call_count": 1
     }
 
 
@@ -96,7 +95,6 @@ async def tool_executor(state: AgentState, runtime: Runtime):
     messages = state["messages"]
     last_message = messages[-1]
     tool_responses = []
-    tool_call_count_ = 0
     db_session = _session_of(runtime)
 
     writer = None
@@ -126,7 +124,6 @@ async def tool_executor(state: AgentState, runtime: Runtime):
             
             raw_result = await tool_function(**tool_args, db_session=db_session)
 
-            # Emit real retrieval metadata to the frontend.
             if tool_name == "hybrid_search" and writer is not None:
                 sources = []
 
@@ -177,7 +174,6 @@ async def tool_executor(state: AgentState, runtime: Runtime):
             name=tool_name
         )
         tool_responses.append(tool_message)
-        tool_call_count_ += 1
 
         if writer is not None:
             try:
@@ -187,8 +183,7 @@ async def tool_executor(state: AgentState, runtime: Runtime):
 
     return {
         "messages": tool_responses,
-        "tool_call_count": tool_call_count_
-    }
+        }
 
 
 """ Below is the Core Agentic Loop """

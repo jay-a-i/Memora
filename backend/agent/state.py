@@ -1,4 +1,3 @@
-import operator
 from dataclasses import dataclass
 from typing import Annotated, Sequence, TypedDict
 
@@ -36,6 +35,3 @@ class AgentState(TypedDict):
     """
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
-
-    llm_call_count: Annotated[int, operator.add]
-    tool_call_count: Annotated[int, operator.add]
