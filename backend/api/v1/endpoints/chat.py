@@ -568,10 +568,9 @@ async def chat_stream(
 
                     answer = "".join(current_parts)
 
-                    if answer.strip():
-                        await _store_assistant_turn(
-                            db_session, session_uuid, payload.turn_id, answer,
-                        )
+                    await _store_assistant_turn(
+                        db_session, session_uuid, payload.turn_id, answer,
+                    )
                     session.updated_at = datetime.now(timezone.utc)
                     await db_session.commit()
 
