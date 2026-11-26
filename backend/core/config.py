@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     #API KEYS
     OPENROUTER_API_KEY: str 
     COHERE_API_KEY: str     
-    TAVILY_API_KEY: str
+    TAVILY_API_KEY: str = ""
     APP_API_KEY: str        
 
     #Models
@@ -121,7 +121,7 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Must put an LLM and Embedding model in app.env"
             )
-        return v
+        return v.strip()
 
     
     @model_validator(mode="after")
