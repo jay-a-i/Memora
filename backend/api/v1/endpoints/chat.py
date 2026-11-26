@@ -16,7 +16,11 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import (
+    HumanMessage, 
+    AIMessage,
+    RemoveMessage,
+)
 from langgraph.errors import GraphRecursionError
 
 from sqlalchemy import select
@@ -453,13 +457,69 @@ async def chat_stream(
                     }
 
                 else:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            "The turn is in an inconsistent state. "
-                            "Do not append another copy of the question."
+                    # The user message exists in the checkpoint, but no valid
+                    # assistant answer was found. Check whether the graph ended
+                    # with an empty assistant response.
+
+                    turn_index = next(
+                        (
+                            index
+                            for index, message in enumerate(checkpoint_messages)
+                            if isinstance(message, HumanMessage)
+                            and message.id == payload.turn_id
                         ),
+                        None,
                     )
+
+                    turn_messages = (
+                        checkpoint_messages[turn_index + 1:]
+                        if turn_index is not None
+                        else []
+                    )
+
+                    last_assistant_message = next(
+                        (
+                            message
+                            for message in reversed(turn_messages)
+                            if isinstance(message, AIMessage)
+                        ),
+                        None,
+                    )
+
+                    if (
+                        last_assistant_message is not None
+                        and not last_assistant_message.tool_calls
+                        and not _content_as_text(last_assistant_message.content).strip()
+                    ):
+                        # Remove the empty AI response from the checkpoint.
+                        await graph.aupdate_state(
+                            config,
+                            {
+                                "messages": [
+                                    RemoveMessage(id=last_assistant_message.id)
+                                ]
+                            },
+                        )
+
+                        # Re-run the same logical turn. Reuse the original HumanMessage ID
+                        # so add_messages replaces it instead of appending a duplicate.
+                        graph_input = {
+                            "messages": [
+                                HumanMessage(
+                                    content=user_msg,
+                                    id=payload.turn_id,
+                                )
+                            ]
+                        }
+
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                "The turn is in an inconsistent state. "
+                                "Do not append another copy of the question."
+                            ),
+                        )
 
         else:
             # New logical turn. Never append a new question to an unfinished run.
@@ -563,14 +623,33 @@ async def chat_stream(
 
                     answer = "".join(current_parts)
 
-                    if answer.strip():
-                        await _store_assistant_turn(
-                            db_session, session_uuid, payload.turn_id, answer,
-                        )
+                    if not answer.strip():
+                        await db_session.rollback()
+
+                        yield _sse({
+                            "type": "error",
+                            "message": (
+                                "The agent returned an empty response. "
+                                "Retry this turn using the same turn_id."
+                            ),
+                        })
+                        yield "data: [DONE]\n\n"
+                        return
+
+                    await _store_assistant_turn(
+                        db_session,
+                        session_uuid,
+                        payload.turn_id,
+                        answer,
+                    )
+
                     session.updated_at = datetime.now(timezone.utc)
                     await db_session.commit()
 
-                    yield _sse({"type": "done", "session_id": str(session_uuid)})
+                    yield _sse({
+                        "type": "done",
+                        "session_id": str(session_uuid),
+                    })
                     yield "data: [DONE]\n\n"
 
             except asyncio.CancelledError:
