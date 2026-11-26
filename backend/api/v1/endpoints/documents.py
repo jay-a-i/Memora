@@ -2,6 +2,7 @@ import re
 import os
 import uuid
 import logging
+import asyncio
 from pathlib import Path
 
 from fastapi import (
@@ -86,6 +87,17 @@ def clamp_page(limit: int, offset: int, maximum: int) -> tuple[int, int]:
     return max(1, min(limit, maximum)), max(offset, 0)
 
 
+def _persist_upload(
+    upload_dir: str,
+    file_path: str,
+    contents: bytearray,
+) -> None:
+    os.makedirs(upload_dir, exist_ok=True)
+
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+
 @router.post(
     "/upload",
     response_model=DocumentUploadResponse,
@@ -139,9 +151,12 @@ async def upload_document(
     # PROCESSING forever. A file with no row is harmless: the upload directory
     # is temporary and the background task removes what it is given.
     try:
-        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-        with open(temp_file_path, "wb") as f:
-            f.write(contents)
+        await asyncio.to_thread(
+            _persist_upload,
+            settings.UPLOAD_DIR,
+            temp_file_path,
+            contents,
+        )
     except Exception as e:
         logger.exception("Failed to persist upload to disk")
         _discard_partial_upload(temp_file_path)
