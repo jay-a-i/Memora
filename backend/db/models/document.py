@@ -57,9 +57,6 @@ class DocumentChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
     embedding = Column(Vector(settings.EMBEDDING_DIMENSIONS))
-    # GENERATED ALWAYS ... STORED mirrors schema.sql so the ORM and the DDL that
-    # actually created the table agree; a plain column would stay NULL and
-    # silently disable the keyword half of hybrid_search.
     fts_content = Column(
         TSVECTOR, Computed("to_tsvector('english', content)", persisted=True)
     )
