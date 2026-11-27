@@ -23,7 +23,7 @@ npm run dev               # http://localhost:3000
 ```
 
 The dev server is pinned to **port 3000** because the backend's default
-`CORS_ORIGINS` is `["http://localhost:3000"]` (`backend/app/core/config.py`).
+`CORS_ORIGINS` is `["http://localhost:3000"]` (`backend/core/config.py`).
 Vite's default 5173 is not on that list and every `/api/v1` request would be
 blocked by preflight.
 
@@ -61,32 +61,51 @@ both derived from the backend Pydantic schemas. No component calls `fetch`.
 | `POST /chat/stream` | SSE over **POST** — see below |
 | `POST /chat/sessions` | 201 with the new session |
 | `GET /chat/sessions` | Most recently active first |
-| `GET /chat/sessions/{id}` | Stored transcript, oldest first |
+| `GET /chat/sessions/{id}` | One history page, oldest first; accepts `limit` and `before_seq` and returns `next_before_seq` |
 | `DELETE /chat/sessions/{id}` | 204; messages cascade |
 | `POST /documents/upload` | 202; ingestion continues in the background |
 | `GET /documents/` | Note the trailing slash |
+| `GET /documents/{id}` | Current ingestion status |
+| `GET /documents/{id}/chunks` | `chunk_index`, `content`, `metadata` |
 | `DELETE /documents/{id}` | 204; chunks cascade |
 
-Three contract details that drove real implementation decisions:
+Four contract details that drove real implementation decisions:
 
 1. **`EventSource` cannot be used.** `POST /chat/stream` is a POST and needs a
    custom header, neither of which `EventSource` supports. The stream is read
    from a `fetch()` `ReadableStream` and parsed in `src/utils/sse.ts`.
 
-2. **The server discards text emitted before a tool call.** `chat.py` resets
-   `current_parts` on `on_tool_start` and persists only the final segment. The
-   client mirrors this, so what is on screen matches what is stored and
-   re-read on reload. See the `tool_start` case in `src/hooks/useChat.ts`.
+2. **The server discards text emitted before a tool boundary.** `chat.py`
+   resets `current_parts` on both `tool_start` and `tool_end` and persists only
+   the final segment. The client mirrors this, so what is on screen matches
+   what is stored and re-read on reload. See the `tool_start`/`tool_end` cases
+   in `src/hooks/useChat.ts`.
 
 3. **Sessions are created lazily.** An abandoned empty conversation would
    otherwise litter the sidebar, so the first send creates the session and
    navigates to `/c/{id}`.
 
+4. **Every turn carries a stable `turn_id`.** The ID is generated once per new
+   question, sent at the top level of the `/chat/stream` body, and reused when
+   the same turn is retried or resumed. Stopping a stream or reloading the page
+   leaves the turn recoverable: history messages expose `turn_id`, so a user
+   message without a matching assistant answer is shown with a Resume action.
+   The frontend never submits a new question while an earlier turn is
+   unfinished; the backend rejects that with HTTP 409.
+
+### History pagination
+
+`getSessionHistory()` accepts `limit` and `before_seq`. The first page stores
+`next_before_seq`; "Load older messages" requests that cursor, prepends the
+result without duplicates, and `MessageList` compensates for the added height
+so the reader's position does not jump.
+
 ### Citations
 
-The stream does not currently emit sources, so `Sources.tsx` renders nothing —
-there is no fabricated citation data. It is wired end to end and will display
-retrieval metadata the moment the backend sends it.
+`Sources.tsx` renders the `sources` events the backend emits from
+`hybrid_search` results (filename, document id, chunk index, score and a text
+snippet). Values are displayed as received; nothing is fabricated when an
+answer has no sources.
 
 ## Layout
 
@@ -107,7 +126,7 @@ src/
 
 State is React state and hooks only — no Redux or global store. The backend
 stays the source of truth for chat, sessions and documents; localStorage holds
-just the last active session id.
+just the last active session id (and, optionally, a runtime API-key override).
 
 ## Design system
 

@@ -42,7 +42,8 @@ export interface UseSessionsResult {
   initialised: boolean;
   refresh: () => Promise<void>;
   createSession: (title?: string) => Promise<ChatSessionDto>;
-  removeSession: (id: string) => Promise<void>;
+  /** Resolves true only when the backend deleted the session. */
+  removeSession: (id: string) => Promise<boolean>;
   restoreLastSession: () => string | null;
   rememberSession: (id: string | null) => void;
 }
@@ -89,7 +90,7 @@ export function useSessions(): UseSessionsResult {
   );
 
   const removeSession = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
       try {
         await deleteSessionRequest(id);
       } catch (cause) {
@@ -100,9 +101,10 @@ export function useSessions(): UseSessionsResult {
             ? cause
             : new ApiError('Could not delete the conversation.', 0, true),
         );
-        return;
+        return false;
       }
       setSessions((current) => current.filter((s) => s.id !== id));
+      return true;
     },
     [],
   );

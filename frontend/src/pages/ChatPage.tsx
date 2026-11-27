@@ -85,10 +85,10 @@ export function ChatPage() {
   }
 
   async function handleDeleteSession(session: ChatSessionDto) {
-    await sessions.removeSession(session.id);
-    // removeSession records its own failure on the shared error state, so a
-    // rejected delete leaves the row in place with the reason shown.
-    if (session.id === sessionId) navigate('/', { replace: true });
+    const removed = await sessions.removeSession(session.id);
+    // Navigate only after the backend confirms the delete. On failure the row
+    // stays in place and removeSession surfaces the reason.
+    if (removed && session.id === sessionId) navigate('/', { replace: true });
   }
 
   async function handleDeleteDocument(document: DocumentDto) {
@@ -162,14 +162,35 @@ export function ChatPage() {
                   ? 'Connection interrupted'
                   : chat.error.isAuthError
                     ? 'API key rejected'
-                    : 'The request failed'
+                    : chat.error.isConflict
+                      ? 'Unfinished turn'
+                      : chat.error.isValidationError
+                        ? 'Invalid request'
+                        : 'The request failed'
               }
               onRetry={() => void chat.retry()}
               onDismiss={chat.clearError}
-              retryLabel="Retry"
+              retryLabel={chat.needsResume ? 'Resume' : 'Retry'}
             >
               {chat.error.message}
               {chat.interrupted && ' The partial answer above was kept.'}
+            </Notice>
+          </div>
+        )}
+
+        {/* Shown when a turn is stopped or recovered from history, so the user
+            always has an explicit way to continue it with the same turn_id. */}
+        {!chat.error && chat.needsResume && (
+          <div className="px-3 pt-3 sm:px-5">
+            <Notice
+              tone="warning"
+              title={chat.interrupted ? 'Response interrupted' : 'Response not finished'}
+              onRetry={() => void chat.retry()}
+              retryLabel={chat.interrupted ? 'Resume' : 'Retry'}
+            >
+              {chat.interrupted
+                ? 'The previous turn was stopped before the backend finished. The partial answer above was kept; resume it to complete this turn.'
+                : 'The last turn has no saved answer. Retry it before asking a new question.'}
             </Notice>
           </div>
         )}
@@ -178,6 +199,10 @@ export function ChatPage() {
           messages={chat.messages}
           loading={chat.loadingHistory}
           hasSession={sessionId !== undefined}
+          hasOlder={chat.nextBeforeSeq !== null}
+          loadingOlder={chat.loadingOlder}
+          olderError={chat.olderError?.message ?? null}
+          onLoadOlder={() => void chat.loadOlder()}
           activitySlot={
             chat.activeTools.length > 0 || chat.completedTools.length > 0 ? (
               <ToolActivity
@@ -198,6 +223,7 @@ export function ChatPage() {
 
         <MessageComposer
           streaming={chat.sending}
+          disabled={chat.loadingHistory || chat.needsResume}
           onSend={(question) => void chat.sendMessage(question)}
           onStop={chat.stop}
         />

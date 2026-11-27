@@ -10,7 +10,7 @@
  * comments (`:` prefixed) ignored.
  */
 
-import { ApiError, buildUrl, streamHeaders } from '../api/client';
+import { ApiError, buildUrl, extractErrorDetail, streamHeaders } from '../api/client';
 import type { ChatRequestDto, RetrievalSource, StreamEvent } from '../types/api';
 
 /** The backend's terminal sentinel, sent as a bare `data: [DONE]`. */
@@ -67,9 +67,9 @@ function parseEvent(data: string): StreamEvent | null {
       };
 
     case 'sources': {
-      // Not emitted by the current backend, but handled so retrieval data is
-      // rendered the moment it is sent. Entries without a usable label are
-      // dropped rather than shown as blank rows.
+      // Emitted by tool_executor when hybrid_search returns real chunks. Each
+      // entry keeps every field the backend sends; entries without a usable
+      // label are dropped rather than shown as blank rows.
       const raw = event.sources;
       if (!Array.isArray(raw)) return null;
 
@@ -88,15 +88,14 @@ function parseEvent(data: string): StreamEvent | null {
           return {
             label,
             ...(typeof item.filename === 'string' ? { filename: item.filename } : {}),
+            ...(typeof item.document_id === 'string'
+              ? { document_id: item.document_id }
+              : {}),
             ...(typeof item.chunk === 'number' || typeof item.chunk === 'string'
               ? { chunk: item.chunk }
               : {}),
-            ...(typeof item.url === 'string' ? { url: item.url } : {}),
             ...(typeof item.score === 'number' ? { score: item.score } : {}),
             ...(typeof item.snippet === 'string' ? { snippet: item.snippet } : {}),
-            ...(typeof item.metadata === 'object' && item.metadata !== null
-              ? { metadata: item.metadata as Record<string, unknown> }
-              : {}),
           };
         })
         .filter((s): s is RetrievalSource => s !== null);
@@ -176,11 +175,7 @@ export async function streamChat({ request, signal, onEvent }: StreamChatOptions
   if (!response.ok) {
     let detail: string | null = null;
     try {
-      const body: unknown = await response.json();
-      if (typeof body === 'object' && body !== null) {
-        const raw = (body as { detail?: unknown }).detail;
-        if (typeof raw === 'string') detail = raw;
-      }
+      detail = extractErrorDetail(await response.json());
     } catch {
       // Fall through to the status message.
     }

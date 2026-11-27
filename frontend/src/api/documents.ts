@@ -1,7 +1,7 @@
 /**
  * Document endpoints.
  *
- * Routes mirror backend/app/api/v1/endpoints/documents.py. The list route is
+ * Routes mirror backend/api/v1/endpoints/documents.py. The list route is
  * declared as "/" upstream, so its path carries a trailing slash.
  */
 

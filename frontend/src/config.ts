@@ -12,7 +12,7 @@ const BASE_URL =
 /**
  * Value for the APP_SECURITY_KEY header.
  *
- * backend/app/core/security.py reads the key from an `APP_SECURITY_KEY`
+ * backend/core/security.py reads the key from an `APP_SECURITY_KEY`
  * request header, not an Authorization bearer token.
  *
  * Resolution order: a runtime override (so a key can be supplied without a

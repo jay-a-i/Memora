@@ -24,6 +24,21 @@ export class ApiError extends Error {
   get isAuthError(): boolean {
     return this.status === 401;
   }
+
+  /** 404 means the session/document disappeared or never existed. */
+  get isNotFound(): boolean {
+    return this.status === 404;
+  }
+
+  /** 409 signals a reused turn or an unfinished earlier turn. */
+  get isConflict(): boolean {
+    return this.status === 409;
+  }
+
+  /** 422 is FastAPI's request-validation failure. */
+  get isValidationError(): boolean {
+    return this.status === 422;
+  }
 }
 
 function buildUrl(path: string, query?: Record<string, string | number | undefined>): string {
@@ -50,7 +65,7 @@ function authHeaders(): Record<string, string> {
  * HTTPException, the list-of-objects form from a 422 validation failure, and
  * the generic `{"detail": "Internal server error."}` fallback.
  */
-function extractDetail(body: unknown): string | null {
+export function extractErrorDetail(body: unknown): string | null {
   if (typeof body !== 'object' || body === null) return null;
 
   const detail = (body as { detail?: unknown }).detail;
@@ -78,7 +93,7 @@ function extractDetail(body: unknown): string | null {
 async function toApiError(response: Response): Promise<ApiError> {
   let detail: string | null = null;
   try {
-    detail = extractDetail(await response.json());
+    detail = extractErrorDetail(await response.json());
   } catch {
     // Non-JSON error body; fall through to the status-based message.
   }
@@ -91,6 +106,15 @@ async function toApiError(response: Response): Promise<ApiError> {
   }
   if (response.status === 404) {
     return new ApiError(detail ?? 'The requested resource was not found.', 404);
+  }
+  if (response.status === 409) {
+    return new ApiError(
+      detail ?? 'The conversation is in a state that does not allow this request.',
+      409,
+    );
+  }
+  if (response.status === 422) {
+    return new ApiError(detail ?? 'The request contained invalid values.', 422);
   }
   if (response.status >= 500) {
     return new ApiError(detail ?? 'The server could not complete the request.', response.status);

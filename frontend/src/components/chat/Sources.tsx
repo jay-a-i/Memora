@@ -5,9 +5,9 @@ import type { RetrievalSource } from '../../types/api';
 /**
  * Source list rendered beneath an assistant answer.
  *
- * The chat stream does not currently emit sources, so this renders nothing
- * unless the backend supplies them. Nothing is invented when the list is
- * empty: an answer without sources simply has no source section.
+ * Populated from the `sources` event the backend emits when hybrid_search
+ * returns chunks. Every value shown comes from that payload; an answer with no
+ * sources simply has no source section.
  */
 
 interface SourcesProps {
@@ -55,18 +55,7 @@ export function Sources({ sources }: SourcesProps) {
                 <div className="flex items-start gap-2">
                   <IconDocument className="mt-0.5 h-3.5 w-3.5 text-grey-400" />
                   <div className="min-w-0 flex-1">
-                    {source.url ? (
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block truncate text-xs font-medium text-grey-800 underline decoration-grey-300 underline-offset-2 transition-colors hover:decoration-grey-700"
-                      >
-                        {source.label}
-                      </a>
-                    ) : (
-                      <p className="truncate text-xs font-medium text-grey-800">{source.label}</p>
-                    )}
+                    <p className="truncate text-xs font-medium text-grey-800">{source.label}</p>
 
                     {detail && <p className="mt-0.5 truncate text-[11px] text-grey-500">{detail}</p>}
 

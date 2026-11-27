@@ -73,7 +73,7 @@ export function SessionItem({ session, active, onSelect, onDelete }: SessionItem
           {label}
         </span>
         <span className="tabular-nums text-[11px] text-grey-400">
-          {relativeTime(session.updated_at ?? session.created_at)}
+          {relativeTime(session.updated_at)}
         </span>
       </button>
 

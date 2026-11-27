@@ -11,6 +11,9 @@ import type { ChatMessage } from '../../hooks/useChat';
  * Auto-scroll follows the stream only while the reader is already at the
  * bottom. Scrolling up is treated as an intent to read, so incoming tokens do
  * not yank the viewport away; a jump-to-latest control appears instead.
+ *
+ * When an older page is prepended, the viewport is shifted by the height that
+ * was added above it, so the message the reader was looking at stays put.
  */
 
 interface MessageListProps {
@@ -23,6 +26,11 @@ interface MessageListProps {
    */
   activitySlot?: ReactNode;
   emptyAction?: ReactNode;
+  /** True while the backend reports an older history page. */
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  olderError: string | null;
+  onLoadOlder: () => void;
 }
 
 /** Distance from the bottom, in px, still treated as "following along". */
@@ -34,10 +42,18 @@ export function MessageList({
   hasSession,
   activitySlot,
   emptyAction,
+  hasOlder,
+  loadingOlder,
+  olderError,
+  onLoadOlder,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
+  const previous = useRef<{
+    firstId: string | undefined;
+    scrollHeight: number;
+  } | null>(null);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -52,8 +68,25 @@ export function MessageList({
    * and leaves the caret behind the text.
    */
   useLayoutEffect(() => {
-    if (!pinned) return;
-    bottomRef.current?.scrollIntoView({ block: 'end' });
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const before = previous.current;
+    const firstId = messages[0]?.id;
+    // A prepend is a new first message while the old first message still
+    // exists further down: only then is the height difference above content.
+    const prepended =
+      before?.firstId !== undefined &&
+      firstId !== before.firstId &&
+      messages.some((message) => message.id === before.firstId);
+
+    if (prepended && before) {
+      el.scrollTop = el.scrollTop + (el.scrollHeight - before.scrollHeight);
+    } else if (pinned) {
+      bottomRef.current?.scrollIntoView({ block: 'end' });
+    }
+
+    previous.current = { firstId, scrollHeight: el.scrollHeight };
   }, [messages, pinned]);
 
   // Jump to the newest message when a conversation is first opened.
@@ -83,14 +116,32 @@ export function MessageList({
     );
   }
 
+  const showOlderControl = hasOlder || loadingOlder || olderError !== null;
+
   return (
     <div className="relative min-h-0 flex-1">
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        // Manual prepend compensation assumes the browser does no anchoring.
+        style={{ overflowAnchor: 'none' }}
         className="scrollbar-thin h-full overflow-y-auto overscroll-contain px-3 py-4 sm:px-5"
       >
         <div className="mx-auto w-full max-w-3xl">
+          {showOlderControl && (
+            <div className="mb-3 flex flex-col items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onLoadOlder}
+                disabled={loadingOlder}
+              >
+                {loadingOlder ? 'Loading older messages...' : 'Load older messages'}
+              </Button>
+              {olderError && <p className="text-[11px] text-grey-500">{olderError}</p>}
+            </div>
+          )}
+
           {loading && messages.length === 0 ? (
             <MessageSkeleton />
           ) : (

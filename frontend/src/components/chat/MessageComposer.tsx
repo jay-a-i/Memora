@@ -13,13 +13,20 @@ import { IconSend } from '../ui/Icon';
 interface MessageComposerProps {
   /** True while a reply is streaming. */
   streaming: boolean;
+  /** True while the transcript is loading or an unfinished turn awaits resume. */
+  disabled?: boolean;
   onSend: (question: string) => void;
   onStop: () => void;
 }
 
 const MAX_TEXTAREA_HEIGHT = 200;
 
-export function MessageComposer({ streaming, onSend, onStop }: MessageComposerProps) {
+export function MessageComposer({
+  streaming,
+  disabled = false,
+  onSend,
+  onStop,
+}: MessageComposerProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -33,7 +40,7 @@ export function MessageComposer({ streaming, onSend, onStop }: MessageComposerPr
 
   function submit() {
     const question = value.trim();
-    if (!question || streaming) return;
+    if (!question || streaming || disabled) return;
     onSend(question);
     setValue('');
     textareaRef.current?.focus();
@@ -46,7 +53,7 @@ export function MessageComposer({ streaming, onSend, onStop }: MessageComposerPr
     }
   }
 
-  const canSend = value.trim().length > 0 && !streaming;
+  const canSend = value.trim().length > 0 && !streaming && !disabled;
 
   return (
     <div className="border-t border-grey-200 bg-grey-100/80 px-3 pb-3 pt-2.5 sm:px-5 sm:pb-4">
@@ -65,9 +72,11 @@ export function MessageComposer({ streaming, onSend, onStop }: MessageComposerPr
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask a question about your documents"
+            placeholder={
+              disabled ? 'Finish or resume the current response first' : 'Ask a question about your documents'
+            }
             rows={1}
-            disabled={streaming}
+            disabled={streaming || disabled}
             aria-describedby="composer-hint"
             className="max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-1 text-sm leading-relaxed text-grey-900 placeholder:text-grey-400 focus:outline-none disabled:cursor-not-allowed disabled:text-grey-400"
           />
