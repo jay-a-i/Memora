@@ -5,8 +5,7 @@ description = "Agentic RAG"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-
-    "fastapi",
+    "fastapi[standard]",
     "uvicorn[standard]",
     "python-dotenv",
     "python-multipart",
@@ -29,7 +28,6 @@ dependencies = [
     "pymupdf4llm>=1.28.2",
     "pypdf",
     "python-docx>=1.2.0",
-
 ]
 
 [dependency-groups]
